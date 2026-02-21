@@ -12,7 +12,7 @@ import chess.pgn
 import httpx
 import io
 from sqlalchemy.orm import Session
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import inspect
 
 from app.models.models import Game, PlayerColor, GameResult, TimeClass
 from app.config import settings
@@ -172,7 +172,15 @@ def sync_games(db: Session, username: str | None = None, since_timestamp: int | 
 
                 end_dt = datetime.fromtimestamp(end_time, tz=timezone.utc)
 
-                stmt = pg_insert(Game).values(
+                # Check if game already exists
+                existing = db.query(Game).filter(
+                    Game.chess_com_id == chess_com_id
+                ).first()
+                if existing:
+                    stats["skipped"] += 1
+                    continue
+
+                game_obj = Game(
                     chess_com_id=chess_com_id,
                     pgn=pgn_text,
                     white_username=white_user,
@@ -191,13 +199,9 @@ def sync_games(db: Session, username: str | None = None, since_timestamp: int | 
                     player_rating=player_rating,
                     opponent_rating=opponent_rating,
                     total_moves=total_moves,
-                ).on_conflict_do_nothing(index_elements=["chess_com_id"])
-
-                result_proxy = db.execute(stmt)
-                if result_proxy.rowcount > 0:
-                    stats["new_games"] += 1
-                else:
-                    stats["skipped"] += 1
+                )
+                db.add(game_obj)
+                stats["new_games"] += 1
 
             except Exception as e:
                 logger.error(f"Failed to process game: {e}")

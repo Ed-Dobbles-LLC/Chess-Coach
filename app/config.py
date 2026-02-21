@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     database_url: str = os.environ.get(
-        "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/chess_coach"
+        "DATABASE_URL", "sqlite:///chess_coach.db"
     )
     anthropic_api_key: str = os.environ.get("ANTHROPIC_API_KEY", "")
     chess_com_username: str = os.environ.get("CHESS_COM_USERNAME", "eddobbles2021")
