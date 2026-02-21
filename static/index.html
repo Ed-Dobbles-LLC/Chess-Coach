@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dobbles.AI Chess Coach</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="logo">Dobbles<span class="ai">.AI</span> Chess Coach</div>
+        <nav class="nav">
+            <button class="nav-btn active" data-view="dashboard">DASHBOARD</button>
+            <button class="nav-btn" data-view="games">GAMES</button>
+            <button class="nav-btn" data-view="review">REVIEW</button>
+            <button class="nav-btn" data-view="patterns">PATTERNS</button>
+            <button class="nav-btn" data-view="drills">DRILLS</button>
+        </nav>
+    </header>
+
+    <main class="main">
+        <!-- DASHBOARD VIEW -->
+        <div id="view-dashboard" class="view active">
+            <div class="kpi-grid" id="kpi-grid"></div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-header">RATING TREND (90 DAYS)</div>
+                    <canvas id="rating-chart" height="200"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-header">QUICK ACTIONS</div>
+                    <div style="display:flex;flex-direction:column;gap:12px;padding:8px 0;">
+                        <button class="btn btn-primary" onclick="syncGames()">Sync Games from Chess.com</button>
+                        <button class="btn btn-secondary" onclick="navigateTo('games')">Browse Games</button>
+                        <button class="btn btn-secondary" onclick="navigateTo('drills')">Start Drill Session</button>
+                        <button class="btn btn-secondary" onclick="generateDiagnosis()">Generate Pattern Diagnosis</button>
+                    </div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">ANALYSIS STATUS</div>
+                <div id="analysis-status"></div>
+            </div>
+        </div>
+
+        <!-- GAMES LIST VIEW -->
+        <div id="view-games" class="view">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <h2 style="font-size:18px;font-weight:700;">Game History</h2>
+                <div style="display:flex;gap:8px;">
+                    <select id="filter-time-class" class="btn btn-secondary btn-sm" onchange="loadGames()">
+                        <option value="">All Time Controls</option>
+                        <option value="blitz" selected>Blitz</option>
+                        <option value="rapid">Rapid</option>
+                        <option value="bullet">Bullet</option>
+                    </select>
+                    <select id="filter-result" class="btn btn-secondary btn-sm" onchange="loadGames()">
+                        <option value="">All Results</option>
+                        <option value="win">Wins</option>
+                        <option value="loss">Losses</option>
+                        <option value="draw">Draws</option>
+                    </select>
+                    <button class="btn btn-primary btn-sm" onclick="syncGames()">Sync New Games</button>
+                </div>
+            </div>
+            <div class="card table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>DATE</th>
+                            <th>OPENING</th>
+                            <th>COLOR</th>
+                            <th>RESULT</th>
+                            <th>RATING</th>
+                            <th>OPP RATING</th>
+                            <th>MOVES</th>
+                            <th>ANALYZED</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="games-table-body"></tbody>
+                </table>
+            </div>
+            <div id="games-pagination" style="display:flex;justify-content:center;gap:8px;padding:16px;"></div>
+        </div>
+
+        <!-- GAME REVIEW VIEW -->
+        <div id="view-review" class="view">
+            <div id="review-select" class="empty-state">
+                <h3>Select a game to review</h3>
+                <p>Go to Games and click Review on any analyzed game.</p>
+            </div>
+            <div id="review-content" style="display:none;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                    <div id="review-header"></div>
+                    <div style="display:flex;gap:8px;">
+                        <button class="btn btn-primary btn-sm" id="btn-coach-review" onclick="requestGameReview()">Get AI Review</button>
+                    </div>
+                </div>
+                <div class="review-layout">
+                    <div class="board-panel">
+                        <div class="board-container" id="chess-board"></div>
+                        <div class="eval-bar-container">
+                            <div class="eval-bar-fill" id="eval-bar" style="width:50%"></div>
+                            <span class="eval-label" id="eval-label">0.0</span>
+                        </div>
+                        <div class="board-nav">
+                            <button class="btn btn-secondary btn-sm" onclick="boardNav('start')">&#x23EE;</button>
+                            <button class="btn btn-secondary btn-sm" onclick="boardNav('prev')">&#x25C0;</button>
+                            <button class="btn btn-secondary btn-sm" onclick="boardNav('next')">&#x25B6;</button>
+                            <button class="btn btn-secondary btn-sm" onclick="boardNav('end')">&#x23ED;</button>
+                        </div>
+                    </div>
+                    <div class="move-list-panel">
+                        <div class="card" style="padding:12px;">
+                            <div class="card-header">GAME SUMMARY</div>
+                            <div id="game-summary-text" style="font-size:13px;line-height:1.6;"></div>
+                        </div>
+                        <div class="move-list" id="move-list"></div>
+                    </div>
+                    <div class="coaching-panel">
+                        <div class="coaching-content" id="coaching-content">
+                            <h3>COACHING</h3>
+                            <p style="color:var(--color-text-dim);">Click any move to get AI coaching explanation.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PATTERNS VIEW -->
+        <div id="view-patterns" class="view">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <h2 style="font-size:18px;font-weight:700;">Pattern Analysis</h2>
+                <button class="btn btn-primary btn-sm" onclick="generateDiagnosis()">Generate AI Diagnosis</button>
+            </div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-header">PHASE PERFORMANCE (AVG CPL)</div>
+                    <div id="phase-chart-container">
+                        <canvas id="phase-chart" height="200"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">COLOR PERFORMANCE</div>
+                    <div id="color-stats"></div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">OPENING REPERTOIRE</div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>OPENING</th>
+                                <th>ECO</th>
+                                <th>GAMES</th>
+                                <th>WIN RATE</th>
+                                <th>AVG CPL</th>
+                            </tr>
+                        </thead>
+                        <tbody id="openings-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-header">TIME OF DAY</div>
+                    <canvas id="hour-chart" height="200"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-header">DAY OF WEEK</div>
+                    <canvas id="day-chart" height="200"></canvas>
+                </div>
+            </div>
+            <div class="card" id="diagnosis-card" style="display:none;">
+                <div class="card-header">AI PATTERN DIAGNOSIS</div>
+                <div id="diagnosis-text" class="coaching-content" style="max-height:none;"></div>
+            </div>
+        </div>
+
+        <!-- DRILLS VIEW -->
+        <div id="view-drills" class="view">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <h2 style="font-size:18px;font-weight:700;">Drill Trainer</h2>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-secondary btn-sm" onclick="extractDrills()">Extract New Drills</button>
+                    <button class="btn btn-primary btn-sm" onclick="loadDrills()">Load Drills</button>
+                </div>
+            </div>
+            <div class="kpi-grid" id="drill-kpis"></div>
+            <div class="drill-layout">
+                <div class="board-panel">
+                    <div class="board-container" id="drill-board"></div>
+                    <div class="drill-prompt" id="drill-prompt">Find the best move!</div>
+                    <div class="drill-input">
+                        <input type="text" id="drill-answer" placeholder="Enter move (e.g., Nf3)" onkeydown="if(event.key==='Enter')submitDrill()">
+                        <button class="btn btn-primary" onclick="submitDrill()">Submit</button>
+                    </div>
+                    <div id="drill-feedback" style="display:none;"></div>
+                    <button class="btn btn-secondary" id="btn-next-drill" onclick="nextDrill()" style="display:none;width:100%;">Next Drill</button>
+                </div>
+                <div>
+                    <div class="card">
+                        <div class="card-header">DRILL QUEUE</div>
+                        <div id="drill-queue"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Toast container -->
+    <div id="toast-container"></div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
