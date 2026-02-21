@@ -13,4 +13,6 @@ build/
 .mypy_cache/
 .pytest_cache/
 *.db
+*.db-shm
+*.db-wal
 *.sqlite3
