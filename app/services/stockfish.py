@@ -74,12 +74,12 @@ def eval_to_cp(info: chess.engine.InfoDict, perspective_white: bool) -> Optional
     score = info.get("score")
     if score is None:
         return None
-    pov = score.white
-    if pov.is_mate():
-        mate_in = pov.mate()
-        # Convert mate to a large centipawn value
+    pov = score.white()
+    mate_in = pov.mate()
+    if mate_in is not None:
         return 10000.0 if mate_in > 0 else -10000.0
-    return float(pov.score())
+    cp = pov.score()
+    return float(cp) if cp is not None else None
 
 
 def analyze_game(db: Session, game: Game, depth: int | None = None) -> dict:
@@ -159,8 +159,9 @@ def analyze_game(db: Session, game: Game, depth: int | None = None) -> dict:
                         for m in pv[:5]:
                             pv_san.append(temp_board.san(m))
                             temp_board.push(m)
-                        s = score.white
-                        cp = s.score() if not s.is_mate() else (10000 if s.mate() > 0 else -10000)
+                        s = score.white()
+                        mate = s.mate()
+                        cp = (10000 if mate > 0 else -10000) if mate is not None else (s.score() or 0)
                         top_3.append({"moves": pv_san, "eval": cp})
 
             move_played_san = board.san(move)
