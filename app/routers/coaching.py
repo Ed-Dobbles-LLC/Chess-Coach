@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.models import Game, CoachingSession
-from app.services.coaching import explain_move, review_game, generate_pattern_diagnosis
+from app.services.coaching import explain_move, review_game, generate_pattern_diagnosis, generate_walkthrough
 
 router = APIRouter(prefix="/api/coach", tags=["coaching"])
 
@@ -38,6 +38,20 @@ def coach_move_explain(req: MoveExplainRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Game not found")
 
     result = explain_move(db, game, req.ply)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return result
+
+
+@router.post("/walkthrough/{game_id}")
+def coach_walkthrough(game_id: int, db: Session = Depends(get_db)):
+    """Generate an interactive game walkthrough with commentary at inflection points."""
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    result = generate_walkthrough(db, game)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
 

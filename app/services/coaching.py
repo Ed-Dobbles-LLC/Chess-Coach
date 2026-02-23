@@ -4,15 +4,18 @@ Stockfish evaluates. Claude teaches. We never ask Claude to calculate —
 we provide Stockfish output and ask Claude to EXPLAIN.
 """
 
+import io
 import logging
+import re
 from typing import Optional
 
+import chess.pgn
 import anthropic
 from sqlalchemy.orm import Session
 
 from app.models.models import (
     Game, MoveAnalysis, GameSummary, CoachingSession, SessionType,
-    MoveClassification, PlayerColor
+    MoveClassification, PlayerColor, GamePhase
 )
 from app.config import settings
 
@@ -37,7 +40,6 @@ def explain_move(db: Session, game: Game, ply: int) -> dict:
         return {"error": f"No analysis found for game {game.id}, ply {ply}"}
 
     # Build PGN up to this point
-    import chess.pgn, io
     pgn_game = chess.pgn.read_game(io.StringIO(game.pgn))
     moves_so_far = []
     if pgn_game:
@@ -292,4 +294,237 @@ Be data-driven. Reference the actual numbers. No generic advice."""
         "diagnosis": diagnosis_text,
         "analyzed_games": analyzed_count,
         "session_id": session.id,
+    }
+
+
+def _build_pgn_up_to(game: Game, target_ply: int) -> str:
+    """Build formatted PGN text up to a given ply."""
+    pgn_game = chess.pgn.read_game(io.StringIO(game.pgn))
+    if not pgn_game:
+        return ""
+    board = pgn_game.board()
+    san_moves = []
+    for i, move in enumerate(pgn_game.mainline_moves()):
+        if i + 1 > target_ply:
+            break
+        san_moves.append(board.san(move))
+        board.push(move)
+    formatted = []
+    for i in range(0, len(san_moves), 2):
+        mn = (i // 2) + 1
+        if i + 1 < len(san_moves):
+            formatted.append(f"{mn}. {san_moves[i]} {san_moves[i+1]}")
+        else:
+            formatted.append(f"{mn}. {san_moves[i]}")
+    return " ".join(formatted)
+
+
+def _get_next_moves_text(all_analyses: list[MoveAnalysis], current_ply: int, count: int = 4) -> str:
+    """Get the next N moves after the current ply as text."""
+    subsequent = [a for a in all_analyses if a.ply > current_ply and a.ply <= current_ply + count]
+    if not subsequent:
+        return "Game ended here."
+    parts = []
+    for a in subsequent:
+        parts.append(f"{a.move_number}{'.' if a.color.value == 'white' else '...'}{a.move_played_san}")
+    return " ".join(parts)
+
+
+def generate_walkthrough(db: Session, game: Game) -> dict:
+    """Generate a move-by-move guided walkthrough with commentary at inflection points only."""
+    summary = db.query(GameSummary).filter(GameSummary.game_id == game.id).first()
+    if not summary:
+        return {"error": "Game has not been analyzed yet. Run Stockfish analysis first."}
+
+    all_analyses = db.query(MoveAnalysis).filter(
+        MoveAnalysis.game_id == game.id,
+    ).order_by(MoveAnalysis.ply).all()
+
+    if not all_analyses:
+        return {"error": "No move analysis found. Run Stockfish analysis first."}
+
+    # Build lookup by ply
+    by_ply = {a.ply: a for a in all_analyses}
+    max_ply = max(a.ply for a in all_analyses)
+    critical_moments = set(summary.critical_moments or [])
+
+    # Identify commentary points
+    commentary_plies = set()
+    prev_phase = None
+    for a in all_analyses:
+        # Mistake or blunder on player's move
+        if a.is_player_move and a.classification in (MoveClassification.mistake, MoveClassification.blunder):
+            commentary_plies.add(a.ply)
+        # Significant eval swing on player's move
+        if a.is_player_move and a.eval_delta is not None and abs(a.eval_delta) > 50:
+            commentary_plies.add(a.ply)
+        # Critical moment from GameSummary
+        if a.ply in critical_moments:
+            commentary_plies.add(a.ply)
+        # Phase transition (first move of new phase)
+        if a.game_phase and prev_phase and a.game_phase != prev_phase:
+            commentary_plies.add(a.ply)
+        prev_phase = a.game_phase
+    # Last move of the game
+    commentary_plies.add(max_ply)
+
+    commentary_plies = sorted(commentary_plies)
+
+    # Build per-moment context for the prompt
+    moments_prompt_sections = []
+    for idx, ply in enumerate(commentary_plies, 1):
+        a = by_ply[ply]
+        pgn_text = _build_pgn_up_to(game, ply)
+        next_moves = _get_next_moves_text(all_analyses, ply)
+
+        # Determine commentary type
+        if ply == max_ply:
+            moment_type = "game_end"
+        elif a.classification in (MoveClassification.blunder,):
+            moment_type = "blunder"
+        elif a.classification in (MoveClassification.mistake,):
+            moment_type = "mistake"
+        elif a.is_player_move and a.eval_delta is not None and abs(a.eval_delta) > 50:
+            moment_type = "significant_swing"
+        elif ply in critical_moments:
+            moment_type = "critical_moment"
+        else:
+            moment_type = "phase_transition"
+
+        section = f"""<moment id="{idx}" ply="{ply}">
+<move_number>{a.move_number}</move_number>
+<color>{a.color.value}</color>
+<fen>{a.fen_before}</fen>
+<pgn_to_here>{pgn_text}</pgn_to_here>
+<move_played>{a.move_played_san}</move_played>
+<best_move>{a.best_move_san or a.move_played_san}</best_move>
+<eval_before>{a.eval_before:.0f}</eval_before>
+<eval_after>{a.eval_after:.0f}</eval_after>
+<eval_delta>{f'{a.eval_delta:.0f}' if a.eval_delta is not None else 'N/A'}</eval_delta>
+<classification>{a.classification.value if a.classification else 'unknown'}</classification>
+<game_phase>{a.game_phase.value if a.game_phase else 'unknown'}</game_phase>
+<next_moves>{next_moves}</next_moves>
+<is_player_move>{a.is_player_move}</is_player_move>
+<moment_type>{moment_type}</moment_type>
+</moment>"""
+        moments_prompt_sections.append(section)
+
+    moments_xml = "\n\n".join(moments_prompt_sections)
+
+    prompt = f"""You are a chess coach providing a guided walkthrough of a complete game for an intermediate player (800-1200 rated).
+
+GAME CONTEXT:
+- Opening: {game.opening_name or 'Unknown'} ({game.eco or '?'})
+- Player color: {game.player_color.value}
+- Result: {game.result.value} ({game.result_type})
+- Player rating: {game.player_rating} | Opponent rating: {game.opponent_rating}
+- Full PGN: {game.pgn[:3000]}
+
+Below are {len(commentary_plies)} key moments from this game. For each moment, provide 2-3 sentences of coaching commentary. Be specific — reference actual squares, pieces, and tactical motifs. No generic advice.
+
+For mistakes/blunders: explain what the player was probably thinking, why it fails, and what the correct move accomplishes.
+For phase transitions: note the shift in priorities (e.g., development → piece activity → king safety).
+For the game end: explain the final position and what sealed the outcome.
+
+{moments_xml}
+
+Respond in EXACTLY this format — one section per moment, using XML tags:
+
+<walkthrough>
+<moment id="1" ply="[ply_number]">
+[Your 2-3 sentence coaching commentary for this moment]
+</moment>
+<moment id="2" ply="[ply_number]">
+[Your 2-3 sentence coaching commentary for this moment]
+</moment>
+...continue for all {len(commentary_plies)} moments...
+</walkthrough>
+
+<narrative>
+[2-3 sentence story arc of the entire game: how it opened, where it turned, how it ended]
+</narrative>"""
+
+    client = _get_client()
+    response = client.messages.create(
+        model=SONNET_MODEL,
+        max_tokens=2000,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    raw_response = response.content[0].text
+
+    # Parse the response
+    commentary_points = []
+    moment_pattern = re.compile(
+        r'<moment\s+id="(\d+)"\s+ply="(\d+)">\s*(.*?)\s*</moment>',
+        re.DOTALL,
+    )
+    for match in moment_pattern.finditer(raw_response):
+        parsed_ply = int(match.group(2))
+        commentary_text = match.group(3).strip()
+        a = by_ply.get(parsed_ply)
+        if not a:
+            continue
+
+        # Determine type
+        if parsed_ply == max_ply:
+            point_type = "game_end"
+        elif a.classification == MoveClassification.blunder:
+            point_type = "blunder"
+        elif a.classification == MoveClassification.mistake:
+            point_type = "mistake"
+        elif a.is_player_move and a.eval_delta is not None and abs(a.eval_delta) > 50:
+            point_type = "significant_swing"
+        elif parsed_ply in critical_moments:
+            point_type = "critical_moment"
+        else:
+            point_type = "phase_transition"
+
+        commentary_points.append({
+            "ply": parsed_ply,
+            "move_number": a.move_number,
+            "color": a.color.value,
+            "fen": a.fen_before,
+            "move_played": a.move_played_san,
+            "best_move": a.best_move_san or a.move_played_san,
+            "classification": a.classification.value if a.classification else None,
+            "eval_before": a.eval_before,
+            "eval_after": a.eval_after,
+            "game_phase": a.game_phase.value if a.game_phase else None,
+            "commentary": commentary_text,
+            "type": point_type,
+        })
+
+    # If XML parsing missed some moments, fall back to matching by ply from our known list
+    parsed_plies = {cp["ply"] for cp in commentary_points}
+    if len(parsed_plies) < len(commentary_plies):
+        logger.warning(
+            f"Walkthrough parsing: got {len(parsed_plies)}/{len(commentary_plies)} moments from XML. "
+            f"Missing plies: {set(commentary_plies) - parsed_plies}"
+        )
+
+    # Parse narrative summary
+    narrative_match = re.search(r'<narrative>\s*(.*?)\s*</narrative>', raw_response, re.DOTALL)
+    narrative_summary = narrative_match.group(1).strip() if narrative_match else ""
+
+    # Store in coaching_sessions
+    import json
+    session = CoachingSession(
+        game_id=game.id,
+        session_type=SessionType.game_review,
+        prompt_sent=prompt,
+        response=json.dumps({
+            "commentary_points": commentary_points,
+            "narrative_summary": narrative_summary,
+        }),
+        model_used=SONNET_MODEL,
+    )
+    db.add(session)
+    db.commit()
+
+    return {
+        "game_id": game.id,
+        "total_moves": game.total_moves,
+        "commentary_points": commentary_points,
+        "narrative_summary": narrative_summary,
     }
