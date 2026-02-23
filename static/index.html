@@ -31,7 +31,7 @@
                 </div>
                 <div class="card">
                     <div class="card-header">QUICK ACTIONS</div>
-                    <div style="display:flex;flex-direction:column;gap:12px;padding:8px 0;">
+                    <div class="quick-actions">
                         <button class="btn btn-primary" onclick="syncGames()">Sync Games from Chess.com</button>
                         <button class="btn btn-secondary" onclick="navigateTo('games')">Browse Games</button>
                         <button class="btn btn-secondary" onclick="navigateTo('drills')">Start Drill Session</button>
@@ -47,16 +47,16 @@
 
         <!-- GAMES LIST VIEW -->
         <div id="view-games" class="view">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-                <h2 style="font-size:18px;font-weight:700;">Game History</h2>
-                <div style="display:flex;gap:8px;">
-                    <select id="filter-time-class" class="btn btn-secondary btn-sm" onchange="loadGames()">
+            <div class="section-header">
+                <h2 class="section-title">Game History</h2>
+                <div class="actions-row">
+                    <select id="filter-time-class" class="filter-select" onchange="loadGames()">
                         <option value="">All Time Controls</option>
                         <option value="blitz" selected>Blitz</option>
                         <option value="rapid">Rapid</option>
                         <option value="bullet">Bullet</option>
                     </select>
-                    <select id="filter-result" class="btn btn-secondary btn-sm" onchange="loadGames()">
+                    <select id="filter-result" class="filter-select" onchange="loadGames()">
                         <option value="">All Results</option>
                         <option value="win">Wins</option>
                         <option value="loss">Losses</option>
@@ -83,7 +83,7 @@
                     <tbody id="games-table-body"></tbody>
                 </table>
             </div>
-            <div id="games-pagination" style="display:flex;justify-content:center;gap:8px;padding:16px;"></div>
+            <div id="games-pagination" class="pagination"></div>
         </div>
 
         <!-- GAME REVIEW VIEW -->
@@ -93,9 +93,9 @@
                 <p>Go to Games and click Review on any analyzed game.</p>
             </div>
             <div id="review-content" style="display:none;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <div class="review-header-bar">
                     <div id="review-header"></div>
-                    <div style="display:flex;gap:8px;">
+                    <div class="actions-row">
                         <button class="btn btn-primary btn-sm" id="btn-coach-review" onclick="requestGameReview()">Get AI Review</button>
                     </div>
                 </div>
@@ -107,23 +107,23 @@
                             <span class="eval-label" id="eval-label">0.0</span>
                         </div>
                         <div class="board-nav">
-                            <button class="btn btn-secondary btn-sm" onclick="boardNav('start')">&#x23EE;</button>
-                            <button class="btn btn-secondary btn-sm" onclick="boardNav('prev')">&#x25C0;</button>
-                            <button class="btn btn-secondary btn-sm" onclick="boardNav('next')">&#x25B6;</button>
-                            <button class="btn btn-secondary btn-sm" onclick="boardNav('end')">&#x23ED;</button>
+                            <button class="btn" onclick="boardNav('start')">&#x23EE;</button>
+                            <button class="btn" onclick="boardNav('prev')">&#x25C0;</button>
+                            <button class="btn" onclick="boardNav('next')">&#x25B6;</button>
+                            <button class="btn" onclick="boardNav('end')">&#x23ED;</button>
                         </div>
                     </div>
                     <div class="move-list-panel">
-                        <div class="card" style="padding:12px;">
+                        <div class="card" style="padding:16px;">
                             <div class="card-header">GAME SUMMARY</div>
-                            <div id="game-summary-text" style="font-size:13px;line-height:1.6;"></div>
+                            <div id="game-summary-text"></div>
                         </div>
                         <div class="move-list" id="move-list"></div>
                     </div>
                     <div class="coaching-panel">
                         <div class="coaching-content" id="coaching-content">
                             <h3>COACHING</h3>
-                            <p style="color:var(--color-text-dim);">Click any move to get AI coaching explanation.</p>
+                            <p>Click any move to get AI coaching explanation.</p>
                         </div>
                     </div>
                 </div>
@@ -132,8 +132,8 @@
 
         <!-- PATTERNS VIEW -->
         <div id="view-patterns" class="view">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-                <h2 style="font-size:18px;font-weight:700;">Pattern Analysis</h2>
+            <div class="section-header">
+                <h2 class="section-title">Pattern Analysis</h2>
                 <button class="btn btn-primary btn-sm" onclick="generateDiagnosis()">Generate AI Diagnosis</button>
             </div>
             <div class="grid-2">
@@ -183,9 +183,9 @@
 
         <!-- DRILLS VIEW -->
         <div id="view-drills" class="view">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-                <h2 style="font-size:18px;font-weight:700;">Drill Trainer</h2>
-                <div style="display:flex;gap:8px;">
+            <div class="section-header">
+                <h2 class="section-title">Drill Trainer</h2>
+                <div class="actions-row">
                     <button class="btn btn-secondary btn-sm" onclick="extractDrills()">Extract New Drills</button>
                     <button class="btn btn-primary btn-sm" onclick="loadDrills()">Load Drills</button>
                 </div>
@@ -213,8 +213,8 @@
 
         <!-- OPENING BOOK VIEW -->
         <div id="view-openingbook" class="view">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-                <h2 style="font-size:18px;font-weight:700;">Opening Book</h2>
+            <div class="section-header">
+                <h2 class="section-title">Opening Book</h2>
             </div>
             <div id="openingbook-select">
                 <div class="card">
@@ -236,7 +236,7 @@
                 </div>
             </div>
             <div id="openingbook-detail" style="display:none;">
-                <button class="btn btn-secondary btn-sm" onclick="showOpeningList()" style="margin-bottom:16px;">Back to List</button>
+                <button class="btn btn-secondary btn-sm" onclick="showOpeningList()" style="margin-bottom:16px;">&#8592; Back to List</button>
                 <div id="openingbook-header"></div>
                 <div class="kpi-grid" id="openingbook-kpis"></div>
                 <div class="grid-2">
