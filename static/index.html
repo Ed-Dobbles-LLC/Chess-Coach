@@ -16,6 +16,7 @@
             <button class="nav-btn" data-view="review">REVIEW</button>
             <button class="nav-btn" data-view="patterns">PATTERNS</button>
             <button class="nav-btn" data-view="drills">DRILLS</button>
+            <button class="nav-btn" data-view="openingbook">OPENING BOOK</button>
         </nav>
     </header>
 
@@ -205,6 +206,47 @@
                     <div class="card">
                         <div class="card-header">DRILL QUEUE</div>
                         <div id="drill-queue"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- OPENING BOOK VIEW -->
+        <div id="view-openingbook" class="view">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <h2 style="font-size:18px;font-weight:700;">Opening Book</h2>
+            </div>
+            <div id="openingbook-select">
+                <div class="card">
+                    <div class="card-header">SELECT AN OPENING</div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>OPENING</th>
+                                    <th>ECO</th>
+                                    <th>GAMES</th>
+                                    <th>WIN RATE</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="openingbook-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div id="openingbook-detail" style="display:none;">
+                <button class="btn btn-secondary btn-sm" onclick="showOpeningList()" style="margin-bottom:16px;">Back to List</button>
+                <div id="openingbook-header"></div>
+                <div class="kpi-grid" id="openingbook-kpis"></div>
+                <div class="grid-2">
+                    <div class="card">
+                        <div class="card-header">YOUR BOOK MOVES (MOST COMMON)</div>
+                        <div id="openingbook-moves"></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">COLOR BREAKDOWN</div>
+                        <div id="openingbook-colors"></div>
                     </div>
                 </div>
             </div>

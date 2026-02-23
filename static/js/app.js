@@ -24,6 +24,7 @@ function navigateTo(view) {
     else if (view === 'games') loadGames();
     else if (view === 'patterns') loadPatterns();
     else if (view === 'drills') loadDrillView();
+    else if (view === 'openingbook') loadOpeningBook();
 }
 
 // ── Toast Notifications ──
@@ -827,6 +828,99 @@ async function extractDrills() {
         loadDrillView();
     } catch (e) {
         showToast('Extraction failed: ' + e.message, 'error');
+    }
+}
+
+// ── Opening Book View ──
+async function loadOpeningBook() {
+    showOpeningList();
+    try {
+        const data = await apiFetch('/api/dashboard/openings');
+        document.getElementById('openingbook-list').innerHTML = data.openings.map(o => `
+            <tr onclick="openOpeningDetail('${o.eco}')">
+                <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;">${o.opening_name}</td>
+                <td>${o.eco || '—'}</td>
+                <td>${o.games}</td>
+                <td><span class="${o.win_rate > 55 ? 'positive' : o.win_rate < 45 ? 'negative' : ''}" style="font-weight:700;">${o.win_rate}%</span></td>
+                <td><button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openOpeningDetail('${o.eco}')">Study</button></td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        console.error('Failed to load opening book:', e);
+    }
+}
+
+function showOpeningList() {
+    document.getElementById('openingbook-select').style.display = 'block';
+    document.getElementById('openingbook-detail').style.display = 'none';
+}
+
+async function openOpeningDetail(eco) {
+    document.getElementById('openingbook-select').style.display = 'none';
+    document.getElementById('openingbook-detail').style.display = 'block';
+
+    try {
+        const data = await apiFetch(`/api/dashboard/opening-book/${eco}`);
+
+        document.getElementById('openingbook-header').innerHTML = `
+            <h3 style="font-size:18px;font-weight:700;margin-bottom:8px;">${data.opening_name} <span style="color:var(--color-text-dim);">(${data.eco})</span></h3>
+        `;
+
+        document.getElementById('openingbook-kpis').innerHTML = `
+            <div class="kpi-card">
+                <div class="kpi-value">${data.total_games}</div>
+                <div class="kpi-label">GAMES PLAYED</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value ${data.win_rate > 55 ? 'positive' : data.win_rate < 45 ? 'negative' : ''}">${data.win_rate}%</div>
+                <div class="kpi-label">WIN RATE</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value">${data.avg_cpl ?? '—'}</div>
+                <div class="kpi-label">AVG CPL</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value">${data.drill_count}</div>
+                <div class="kpi-label">DRILL POSITIONS</div>
+            </div>
+        `;
+
+        // Book moves
+        let movesHtml = '<div style="font-size:13px;">';
+        for (const bm of data.book_moves) {
+            const isWhite = bm.color === 'white';
+            const prefix = isWhite ? `<strong>${bm.move_number}.</strong>` : '';
+            const altText = bm.alternatives.length
+                ? `<span style="color:var(--color-text-muted);font-size:11px;margin-left:4px;">(${bm.alternatives.map(a => `${a.move} ${a.pct}%`).join(', ')})</span>`
+                : '';
+            movesHtml += `
+                <div style="display:inline-block;margin:2px 0;">
+                    ${prefix} <span class="notation" style="padding:2px 6px;background:${bm.main_pct > 70 ? 'rgba(0,185,142,0.15)' : bm.main_pct > 40 ? 'rgba(133,228,253,0.1)' : 'rgba(219,84,97,0.1)'};border-radius:3px;">${bm.main_move}</span>
+                    <span style="font-size:10px;color:var(--color-text-dim);">${bm.main_pct}%</span>
+                    ${altText}
+                </div>
+            `;
+        }
+        movesHtml += '</div>';
+        document.getElementById('openingbook-moves').innerHTML = movesHtml;
+
+        // Color breakdown
+        document.getElementById('openingbook-colors').innerHTML = `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:8px;">
+                <div style="text-align:center;padding:16px;background:var(--color-bg);border-radius:8px;">
+                    <div style="font-size:28px;">&#9812;</div>
+                    <div style="font-size:20px;font-weight:700;margin:4px 0;">${data.as_white.win_rate}%</div>
+                    <div style="font-size:11px;color:var(--color-sky);">${data.as_white.games} GAMES AS WHITE</div>
+                </div>
+                <div style="text-align:center;padding:16px;background:var(--color-bg);border-radius:8px;">
+                    <div style="font-size:28px;">&#9818;</div>
+                    <div style="font-size:20px;font-weight:700;margin:4px 0;">${data.as_black.win_rate}%</div>
+                    <div style="font-size:11px;color:var(--color-sky);">${data.as_black.games} GAMES AS BLACK</div>
+                </div>
+            </div>
+        `;
+    } catch (e) {
+        showToast('Failed to load opening: ' + e.message, 'error');
     }
 }
 

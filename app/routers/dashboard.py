@@ -1,18 +1,41 @@
 """Dashboard and aggregate stats endpoints."""
 
-from fastapi import APIRouter, Depends
+import io
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case, extract
 
+import chess.pgn
+
 from app.database import get_db
-from app.models.models import Game, GameSummary, MoveAnalysis, GameResult, PlayerColor
+from app.models.models import Game, GameSummary, MoveAnalysis, GameResult, PlayerColor, DrillPosition
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
+
+# Simple in-memory cache for expensive dashboard queries
+_cache = {}
+_cache_ttl = 300  # 5 minutes
+
+def _cached(key, ttl=_cache_ttl):
+    """Decorator-less cache check. Returns (hit, value)."""
+    import time
+    entry = _cache.get(key)
+    if entry and (time.time() - entry[0]) < ttl:
+        return True, entry[1]
+    return False, None
+
+def _set_cache(key, value):
+    import time
+    _cache[key] = (time.time(), value)
 
 
 @router.get("/summary")
 def dashboard_summary(db: Session = Depends(get_db)):
     """Aggregated stats for dashboard view."""
+    hit, cached = _cached("dashboard_summary")
+    if hit:
+        return cached
+
     total_games = db.query(Game).count()
     analyzed_games = db.query(GameSummary).count()
 
@@ -50,7 +73,7 @@ def dashboard_summary(db: Session = Depends(get_db)):
         func.avg(case((Game.result == "win", 1.0), else_=0.0)),
     ).group_by(Game.time_class).all()
 
-    return {
+    result = {
         "total_games": total_games,
         "analyzed_games": analyzed_games,
         "record": {"wins": wins, "losses": losses, "draws": draws},
@@ -67,6 +90,8 @@ def dashboard_summary(db: Session = Depends(get_db)):
             for tc, count, wr in time_class_stats
         ],
     }
+    _set_cache("dashboard_summary", result)
+    return result
 
 
 @router.get("/openings")
@@ -192,3 +217,93 @@ def time_analysis(db: Session = Depends(get_db)):
             for d, c, wr in daily
         ],
     }
+
+
+@router.get("/opening-book/{eco}")
+def opening_book(eco: str, db: Session = Depends(get_db)):
+    """Opening book view: theory, your stats, and your deviations for a specific opening."""
+    hit, cached = _cached(f"opening_book_{eco}")
+    if hit:
+        return cached
+
+    # Get all games with this ECO code
+    games = db.query(Game).filter(Game.eco == eco).order_by(Game.end_time.desc()).all()
+    if not games:
+        return {"error": "No games found with this ECO code"}
+
+    opening_name = games[0].opening_name
+    total = len(games)
+    wins = sum(1 for g in games if g.result == GameResult.win)
+    losses = sum(1 for g in games if g.result == GameResult.loss)
+    draws = total - wins - losses
+
+    # Parse mainline moves from all games to find the "book" (most common moves)
+    move_trees = {}  # {move_number: {san_move: count}}
+    for game in games:
+        try:
+            pgn_game = chess.pgn.read_game(io.StringIO(game.pgn))
+            if not pgn_game:
+                continue
+            board = pgn_game.board()
+            for i, move in enumerate(pgn_game.mainline_moves()):
+                if i >= 20:  # First 10 full moves
+                    break
+                san = board.san(move)
+                ply = i + 1
+                if ply not in move_trees:
+                    move_trees[ply] = {}
+                move_trees[ply][san] = move_trees[ply].get(san, 0) + 1
+                board.push(move)
+        except Exception:
+            continue
+
+    # Build the "book" — most common move at each ply
+    book_moves = []
+    for ply in sorted(move_trees.keys()):
+        moves = move_trees[ply]
+        sorted_moves = sorted(moves.items(), key=lambda x: -x[1])
+        main_move = sorted_moves[0]
+        alternatives = sorted_moves[1:4]  # Top 3 alternatives
+        book_moves.append({
+            "ply": ply,
+            "move_number": (ply + 1) // 2,
+            "color": "white" if ply % 2 == 1 else "black",
+            "main_move": main_move[0],
+            "main_count": main_move[1],
+            "main_pct": round(main_move[1] / total * 100, 1),
+            "alternatives": [
+                {"move": m, "count": c, "pct": round(c / total * 100, 1)}
+                for m, c in alternatives
+            ],
+        })
+
+    # Get analyzed game stats
+    avg_cpl = db.query(func.avg(GameSummary.avg_centipawn_loss)).join(
+        Game, Game.id == GameSummary.game_id
+    ).filter(Game.eco == eco).scalar()
+
+    # Color breakdown
+    as_white = sum(1 for g in games if g.player_color.value == "white")
+    white_wins = sum(1 for g in games if g.player_color.value == "white" and g.result == GameResult.win)
+    as_black = total - as_white
+    black_wins = sum(1 for g in games if g.player_color.value == "black" and g.result == GameResult.win)
+
+    # Drill count for this opening
+    drill_count = db.query(DrillPosition).filter(DrillPosition.opening_eco == eco).count()
+
+    result = {
+        "eco": eco,
+        "opening_name": opening_name,
+        "total_games": total,
+        "wins": wins,
+        "losses": losses,
+        "draws": draws,
+        "win_rate": round(wins / total * 100, 1) if total > 0 else 0,
+        "avg_cpl": round(avg_cpl, 1) if avg_cpl else None,
+        "as_white": {"games": as_white, "win_rate": round(white_wins / as_white * 100, 1) if as_white > 0 else 0},
+        "as_black": {"games": as_black, "win_rate": round(black_wins / as_black * 100, 1) if as_black > 0 else 0},
+        "book_moves": book_moves,
+        "drill_count": drill_count,
+    }
+    _set_cache(f"opening_book_{eco}", result)
+    return result

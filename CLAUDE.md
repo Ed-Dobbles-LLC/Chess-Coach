@@ -25,15 +25,15 @@ Personalized chess coaching platform for eddobbles2021 on Chess.com. Ingests ful
 - Phase 4 (Frontend v1): DONE
 - Phase 5 (Pattern Analytics): DONE
 - Phase 6 (Drill Trainer): DONE
-- Phase 7 (Backfill & Polish): ~70% — see NEXT STEPS below
+- Phase 7 (Backfill & Polish): DONE
 
-## NEXT STEPS (Phase 7 gaps)
+## WHAT WAS ADDED IN PHASE 7
 
-1. **Tactical theme classification** — `DrillPosition.tactical_theme` field exists but is never populated. Need logic to detect pins, forks, skewers, back-rank threats, etc. from Stockfish lines.
-2. **Opening book view** — ECO codes stored but no dedicated opening study page with theory lines, your deviations from book, and per-opening drill launcher.
-3. **Backfill tooling** — `batch_analyze()` works but no background job scheduler or CLI command. Full 5,093 game analysis needs to run as a long-lived background task.
-4. **Caching** — No HTTP response caching, no precomputed aggregates. Dashboard queries hit the DB every time.
-5. **Progressive curriculum** — Drills use spaced repetition but no staged learning path (fundamentals → intermediate → advanced).
+1. **Tactical theme classification** (`app/services/tactics.py`) — Pure python-chess position analysis detecting: forks, pins, skewers, back-rank threats, discovered/double check, hanging/trapped/overloaded pieces, passed pawns, promotions, winning exchanges, plus eval-context themes.
+2. **Opening Book view** — New frontend tab + `/api/dashboard/opening-book/{eco}` API endpoint. Shows your most common moves at each ply, alternatives, color breakdown, drill count per opening.
+3. **CLI batch tooling** (`cli.py`) — Commands: `sync`, `analyze --limit N --depth 18`, `extract-drills`, `tag-themes [--force]`, `status`. Progress tracking with ETA.
+4. **Dashboard caching** — In-memory cache with 5-min TTL on expensive queries (summary, opening-book).
+5. **Drill themes wired in** — `extract_drill_positions()` now auto-classifies tactical themes on creation.
 
 ## ARCHITECTURE
 
@@ -48,17 +48,19 @@ app/
     analysis.py      — POST /api/analysis/batch, GET /api/analysis/status, GET /api/analysis/game/{id}
     coaching.py      — POST /api/coach/game-review/{id}, POST /api/coach/move-explain, POST /api/coach/diagnose, GET /api/coach/sessions
     drills.py        — GET /api/drills, POST /api/drills/{id}/attempt, GET /api/drills/stats, POST /api/drills/extract
-    dashboard.py     — GET /api/dashboard/summary, /openings, /patterns, /time-analysis
+    dashboard.py     — GET /api/dashboard/summary, /openings, /patterns, /time-analysis, /opening-book/{eco}
   services/
     chess_com.py     — Chess.com PubAPI ingestion (single-threaded, 1 req/sec)
     stockfish.py     — Engine analysis pipeline (depth 18 batch, depth 22 deep)
     coaching.py      — Claude prompt templates and API calls
     drills.py        — Spaced repetition logic and drill extraction
+    tactics.py       — Tactical theme detection (forks, pins, skewers, etc.)
 static/
-  index.html         — SPA shell with all 5 views
+  index.html         — SPA shell with 6 views (Dashboard, Games, Review, Patterns, Drills, Opening Book)
   css/style.css      — Dobbles.AI design system
   js/app.js          — Client-side application (board renderer, charts, navigation)
 main.py              — FastAPI app entry point, mounts routers and static files
+cli.py               — CLI batch operations (sync, analyze, extract-drills, tag-themes, status)
 ```
 
 ## KEY DECISIONS
@@ -84,16 +86,18 @@ main.py              — FastAPI app entry point, mounts routers and static file
 # Start server
 uvicorn main:app --host 0.0.0.0 --port 8000
 
-# Sync games from Chess.com
+# CLI batch tools (recommended for heavy work)
+python cli.py sync                    # Sync games from Chess.com
+python cli.py analyze --limit 200     # Batch Stockfish analysis with progress/ETA
+python cli.py extract-drills          # Extract drill positions from analyzed games
+python cli.py tag-themes              # Tag tactical themes on untagged drills
+python cli.py tag-themes --force      # Re-tag all drills
+python cli.py status                  # Show database status
+
+# API equivalents
 curl -X POST http://localhost:8000/api/games/sync
-
-# Analyze last 200 blitz games
 curl -X POST http://localhost:8000/api/analysis/batch -H "Content-Type: application/json" -d '{"limit": 200}'
-
-# Generate AI review for a game
 curl -X POST http://localhost:8000/api/coach/game-review/5093
-
-# Extract drill positions
 curl -X POST http://localhost:8000/api/drills/extract
 ```
 
@@ -108,7 +112,27 @@ STOCKFISH_DEPTH       — Batch analysis depth (default: 18)
 STOCKFISH_DEEP_DEPTH  — Single-game deep review depth (default: 22)
 ```
 
+## DEPLOYMENT
+
+- **Railway project:** https://railway.com/project/12a4ab27-3e6d-4da8-b40c-0024e4a27f74
+- **Railway service:** chess-coach (FastAPI + Stockfish in Docker)
+- **Railway Postgres:** auto-injected via `DATABASE_URL`
+- Token in `.env` as `RAILWAY_TOKEN` (never commit)
+
+### Deploy to Railway
+
+1. In Railway dashboard → New Service → Deploy from GitHub repo
+2. Railway auto-detects `Dockerfile` + `railway.toml`
+3. Set environment variables in Railway dashboard:
+   - `ANTHROPIC_API_KEY` — Claude API key
+   - `CHESS_COM_USERNAME` — `eddobbles2021`
+   - `STOCKFISH_PATH` — `/usr/games/stockfish` (installed via Dockerfile apt-get)
+   - `STOCKFISH_DEPTH` — `18`
+   - `DATABASE_URL` — auto-injected by Railway Postgres plugin
+4. Add Postgres plugin → Railway auto-injects `DATABASE_URL`
+5. Deploy triggers on push to main branch
+
 ## SENSITIVE FILES
 
-- `.env` — API keys (gitignored)
+- `.env` — API keys and Railway token (gitignored)
 - `chess_coach.db` — Local SQLite database (gitignored)

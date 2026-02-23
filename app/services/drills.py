@@ -15,6 +15,7 @@ from app.models.models import (
     DrillPosition, MoveAnalysis, Game, GameSummary,
     MoveClassification, GamePhase
 )
+from app.services.tactics import classify_drill_themes
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,15 @@ def extract_drill_positions(db: Session, game_id: Optional[int] = None,
 
         game = db.query(Game).filter(Game.id == analysis.game_id).first()
 
+        # Detect tactical themes
+        themes = classify_drill_themes(
+            fen=analysis.fen_before,
+            best_move_san=analysis.best_move_san,
+            player_move_san=analysis.move_played_san,
+            eval_delta=analysis.eval_delta or 0,
+            game_phase=analysis.game_phase.value if analysis.game_phase else "middlegame",
+        )
+
         drill = DrillPosition(
             game_id=analysis.game_id,
             ply=analysis.ply,
@@ -72,6 +82,7 @@ def extract_drill_positions(db: Session, game_id: Optional[int] = None,
             correct_move_san=analysis.best_move_san,
             player_move_san=analysis.move_played_san,
             eval_delta=analysis.eval_delta,
+            tactical_theme=themes if themes else None,
             game_phase=analysis.game_phase,
             opening_eco=game.eco if game else None,
             next_review_date=date.today(),
@@ -116,6 +127,7 @@ def get_next_drills(db: Session, count: int = 10,
             "fen": d.fen,
             "game_phase": d.game_phase.value if d.game_phase else None,
             "opening_eco": d.opening_eco,
+            "tactical_theme": d.tactical_theme,
             "difficulty": d.difficulty_rating,
             "times_shown": d.times_shown,
             "times_correct": d.times_correct,
