@@ -307,3 +307,24 @@ def opening_book(eco: str, db: Session = Depends(get_db)):
     }
     _set_cache(f"opening_book_{eco}", result)
     return result
+
+
+@router.get("/sessions")
+def sessions_summary(db: Session = Depends(get_db)):
+    """Playing session analysis with tilt detection."""
+    hit, cached = _cached("sessions_summary")
+    if hit:
+        return cached
+
+    from app.services.sessions import get_sessions_summary
+    result = get_sessions_summary(db)
+    if "error" not in result:
+        _set_cache("sessions_summary", result)
+    return result
+
+
+@router.get("/sessions/{date}")
+def session_detail(date: str, db: Session = Depends(get_db)):
+    """Detailed game-by-game data for a session on a specific date."""
+    from app.services.sessions import get_session_detail
+    return get_session_detail(db, date)

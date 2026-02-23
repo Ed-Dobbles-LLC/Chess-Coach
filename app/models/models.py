@@ -165,3 +165,30 @@ class DrillPosition(Base):
     __table_args__ = (
         UniqueConstraint("game_id", "ply", name="uq_drill_game_ply"),
     )
+
+
+class SessionResult(str, enum.Enum):
+    net_positive = "net_positive"
+    net_negative = "net_negative"
+    breakeven = "breakeven"
+
+
+class PlaySession(Base):
+    __tablename__ = "play_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    start_time = Column(DateTime(timezone=True), nullable=False, index=True)
+    end_time = Column(DateTime(timezone=True), nullable=False)
+    game_count = Column(Integer, nullable=False)
+    game_ids = Column(JSON, nullable=False)  # List of game IDs in this session
+    starting_rating = Column(Integer)
+    ending_rating = Column(Integer)
+    rating_delta = Column(Integer)
+    win_count = Column(Integer, default=0)
+    loss_count = Column(Integer, default=0)
+    draw_count = Column(Integer, default=0)
+    avg_cpl = Column(Float)             # For analyzed games in session
+    avg_cpl_first_half = Column(Float)  # CPL for first half of session
+    avg_cpl_second_half = Column(Float) # CPL for second half of session
+    longest_loss_streak = Column(Integer, default=0)
+    session_result = Column(Enum(SessionResult))

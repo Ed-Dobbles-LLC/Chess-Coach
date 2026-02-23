@@ -5,6 +5,7 @@ Usage:
     python cli.py analyze [--limit N] — Batch analyze unanalyzed blitz games
     python cli.py extract-drills      — Extract drill positions from analyzed games
     python cli.py tag-themes          — Retroactively tag tactical themes on existing drills
+    python cli.py build-sessions      — Build play session records from game history
     python cli.py status              — Show database status
 """
 
@@ -141,9 +142,23 @@ def cmd_tag_themes(args):
     db.close()
 
 
+def cmd_build_sessions(args):
+    from app.database import SessionLocal, engine, Base
+    # Import models to ensure PlaySession is registered before create_all
+    from app.models import models  # noqa: F401
+    Base.metadata.create_all(bind=engine)
+    from app.services.sessions import build_play_sessions
+
+    db = SessionLocal()
+    logger.info("Building play session records from game history...")
+    result = build_play_sessions(db)
+    logger.info(f"Created {result['created']} sessions covering {result.get('total_games_grouped', 0)} games")
+    db.close()
+
+
 def cmd_status(args):
     from app.database import SessionLocal
-    from app.models.models import Game, GameSummary, MoveAnalysis, DrillPosition, CoachingSession
+    from app.models.models import Game, GameSummary, MoveAnalysis, DrillPosition, CoachingSession, PlaySession
     from sqlalchemy import func
 
     db = SessionLocal()
@@ -153,7 +168,11 @@ def cmd_status(args):
     total_moves = db.query(MoveAnalysis).count()
     drills = db.query(DrillPosition).count()
     drills_with_themes = db.query(DrillPosition).filter(DrillPosition.tactical_theme.isnot(None)).count()
-    sessions = db.query(CoachingSession).count()
+    coaching = db.query(CoachingSession).count()
+    try:
+        play_sessions = db.query(PlaySession).count()
+    except Exception:
+        play_sessions = 0
 
     print(f"\n{'='*40}")
     print(f"  CHESS COACH DATABASE STATUS")
@@ -163,7 +182,8 @@ def cmd_status(args):
     print(f"  Move analyses:  {total_moves:,}")
     print(f"  Drill positions:{drills:,}")
     print(f"  Drills w/themes:{drills_with_themes:,}")
-    print(f"  Coach sessions: {sessions:,}")
+    print(f"  Coach sessions: {coaching:,}")
+    print(f"  Play sessions:  {play_sessions:,}")
     print(f"{'='*40}\n")
 
     db.close()
@@ -184,6 +204,8 @@ def main():
     tag_p = sub.add_parser("tag-themes", help="Tag tactical themes on drills")
     tag_p.add_argument("--force", action="store_true", help="Re-tag all drills, not just untagged")
 
+    sub.add_parser("build-sessions", help="Build play session records")
+
     sub.add_parser("status", help="Show database status")
 
     args = parser.parse_args()
@@ -196,6 +218,8 @@ def main():
         cmd_extract_drills(args)
     elif args.command == "tag-themes":
         cmd_tag_themes(args)
+    elif args.command == "build-sessions":
+        cmd_build_sessions(args)
     elif args.command == "status":
         cmd_status(args)
     else:
