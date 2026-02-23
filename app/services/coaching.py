@@ -19,7 +19,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 SONNET_MODEL = "claude-sonnet-4-20250514"
-OPUS_MODEL = "claude-opus-4-0-20250115"
+OPUS_MODEL = "claude-opus-4-20250514"
 
 
 def _get_client() -> anthropic.Anthropic:
