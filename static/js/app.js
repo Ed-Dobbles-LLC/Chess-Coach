@@ -31,6 +31,7 @@ function navigateTo(view) {
     else if (view === 'games') loadGames();
     else if (view === 'patterns') loadPatterns();
     else if (view === 'drills') loadDrillView();
+    else if (view === 'sessions') loadSessions();
     else if (view === 'openingbook') loadOpeningBook();
 }
 
@@ -1136,6 +1137,322 @@ async function extractDrills() {
         loadDrillView();
     } catch (e) {
         showToast('Extraction failed: ' + e.message, 'error');
+    }
+}
+
+// ── Sessions View ──
+let sessionsData = null;
+
+async function loadSessions() {
+    try {
+        const data = await apiFetch('/api/dashboard/sessions');
+        if (data.error) {
+            document.getElementById('sess-stop-banner').innerHTML = `
+                <span class="sess-stop-label">Sessions</span>
+                <div class="sess-stop-detail">${data.error}</div>
+            `;
+            return;
+        }
+        sessionsData = data;
+        renderSessionsView(data);
+    } catch (e) {
+        console.error('Failed to load sessions:', e);
+    }
+}
+
+function renderSessionsView(data) {
+    const tilt = data.tilt_detection || {};
+    const optimal = data.optimal_session_length || {};
+
+    // Stop point banner
+    document.getElementById('sess-stop-banner').innerHTML = `
+        <span class="sess-stop-label">Recommended Stop Point</span>
+        <div class="sess-stop-value">${tilt.recommended_stop_point || 'Calculating...'}</div>
+        <div class="sess-stop-detail">
+            ${optimal.crossover_game_count
+                ? `Your rating delta turns negative at game ${optimal.crossover_game_count} in a session. Games played beyond this point statistically cost you rating.`
+                : 'Keep sessions moderate. Your performance degrades with extended play.'}
+        </div>
+    `;
+
+    // KPIs
+    const optimalNum = optimal.crossover_game_count || '?';
+    document.getElementById('sess-kpis').innerHTML = `
+        <div class="kpi-card">
+            <div class="kpi-value">${data.total_sessions.toLocaleString()}</div>
+            <div class="kpi-label">TOTAL SESSIONS</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-value">${data.avg_games_per_session}</div>
+            <div class="kpi-label">AVG GAMES / SESSION</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-value ${typeof optimalNum === 'number' ? '' : 'negative'}">${optimalNum}</div>
+            <div class="kpi-label">OPTIMAL SESSION LENGTH</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-value negative">${tilt.win_rate_after_2_consecutive_losses ?? '—'}%</div>
+            <div class="kpi-label">WR AFTER 2 LOSSES</div>
+        </div>
+    `;
+
+    // Performance by session length chart
+    renderSessionLengthChart(data.performance_by_session_length);
+
+    // Tilt indicator
+    renderTiltCard(tilt);
+
+    // Session history table
+    renderSessionTable(data.best_sessions, data.worst_sessions);
+}
+
+function renderSessionLengthChart(perf) {
+    if (!perf || !perf.length) return;
+
+    const canvas = document.getElementById('sess-length-chart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+    const w = rect.width, h = rect.height;
+    const pad = { top: 30, right: 30, bottom: 50, left: 60 };
+
+    ctx.clearRect(0, 0, w, h);
+
+    const deltas = perf.map(p => p.avg_rating_delta);
+    const maxAbs = Math.max(Math.abs(Math.min(...deltas)), Math.abs(Math.max(...deltas)), 5) * 1.3;
+
+    const chartW = w - pad.left - pad.right;
+    const chartH = h - pad.top - pad.bottom;
+    const barW = Math.min(60, chartW / perf.length * 0.6);
+    const gap = chartW / perf.length;
+    const zeroY = pad.top + chartH / 2;
+
+    // Zero line
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, zeroY);
+    ctx.lineTo(w - pad.right, zeroY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Zero label
+    ctx.fillStyle = 'rgba(148,163,184,0.5)';
+    ctx.font = '10px Inter';
+    ctx.textAlign = 'right';
+    ctx.fillText('0', pad.left - 8, zeroY + 4);
+
+    perf.forEach((p, i) => {
+        const delta = p.avg_rating_delta;
+        const x = pad.left + gap * i + (gap - barW) / 2;
+        const barH = Math.abs(delta) / maxAbs * (chartH / 2);
+        const isPositive = delta >= 0;
+        const y = isPositive ? zeroY - barH : zeroY;
+
+        const color = isPositive ? '#00B98E' : '#DB5461';
+
+        // Bar
+        const radius = Math.min(4, barW / 2);
+        ctx.beginPath();
+        if (isPositive) {
+            ctx.moveTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.lineTo(x + barW - radius, y);
+            ctx.quadraticCurveTo(x + barW, y, x + barW, y + radius);
+            ctx.lineTo(x + barW, zeroY);
+            ctx.lineTo(x, zeroY);
+        } else {
+            ctx.moveTo(x, zeroY);
+            ctx.lineTo(x + barW, zeroY);
+            ctx.lineTo(x + barW, zeroY + barH - radius);
+            ctx.quadraticCurveTo(x + barW, zeroY + barH, x + barW - radius, zeroY + barH);
+            ctx.lineTo(x + radius, zeroY + barH);
+            ctx.quadraticCurveTo(x, zeroY + barH, x, zeroY + barH - radius);
+        }
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.fill();
+
+        // Value label
+        ctx.fillStyle = 'rgba(241,245,249,0.9)';
+        ctx.font = '600 12px Inter';
+        ctx.textAlign = 'center';
+        const sign = delta > 0 ? '+' : '';
+        const labelY = isPositive ? y - 10 : zeroY + barH + 16;
+        ctx.fillText(`${sign}${delta.toFixed(1)}`, x + barW / 2, labelY);
+
+        // Win rate sub-label
+        ctx.fillStyle = 'rgba(148,163,184,0.6)';
+        ctx.font = '10px Inter';
+        ctx.fillText(`${p.win_rate}% WR`, x + barW / 2, labelY + (isPositive ? -14 : 14));
+
+        // Category label
+        ctx.fillStyle = 'rgba(148,163,184,0.7)';
+        ctx.font = '600 11px Inter';
+        ctx.fillText(`${p.games}`, x + barW / 2, h - pad.bottom + 16);
+        ctx.fillStyle = 'rgba(148,163,184,0.5)';
+        ctx.font = '10px Inter';
+        ctx.fillText(`(${p.count})`, x + barW / 2, h - pad.bottom + 30);
+    });
+
+    // Y axis label
+    ctx.save();
+    ctx.fillStyle = 'rgba(148,163,184,0.5)';
+    ctx.font = '10px Inter';
+    ctx.textAlign = 'center';
+    ctx.translate(14, (h - pad.top - pad.bottom) / 2 + pad.top);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('Avg Rating Delta', 0, 0);
+    ctx.restore();
+
+    // X axis label
+    ctx.fillStyle = 'rgba(148,163,184,0.4)';
+    ctx.font = '10px Inter';
+    ctx.textAlign = 'center';
+    ctx.fillText('Games per Session (# sessions)', w / 2, h - 4);
+}
+
+function renderTiltCard(tilt) {
+    const container = document.getElementById('sess-tilt');
+    const wrAfterLoss = tilt.win_rate_after_loss ?? 0;
+    const wrAfterWin = tilt.win_rate_after_win ?? 0;
+    const wrDrop = (wrAfterWin - wrAfterLoss).toFixed(1);
+    const wrAfter2 = tilt.win_rate_after_2_consecutive_losses ?? 0;
+
+    container.innerHTML = `
+        <div class="sess-tilt-row">
+            <div class="sess-tilt-icon positive">&#9650;</div>
+            <div class="sess-tilt-label">Win rate <strong>after a win</strong></div>
+            <div class="sess-tilt-value positive">${wrAfterWin}%</div>
+        </div>
+        <div class="sess-tilt-row">
+            <div class="sess-tilt-icon negative">&#9660;</div>
+            <div class="sess-tilt-label">Win rate <strong>after a loss</strong>
+                <br><span style="font-size:11px;color:var(--color-text-muted);">Drops ${wrDrop} percentage points</span>
+            </div>
+            <div class="sess-tilt-value negative">${wrAfterLoss}%</div>
+        </div>
+        <div class="sess-tilt-row">
+            <div class="sess-tilt-icon warning">&#9888;</div>
+            <div class="sess-tilt-label">Win rate <strong>after 2 consecutive losses</strong>
+                <br><span style="font-size:11px;color:var(--color-text-muted);">${tilt.games_after_2_losses || 0} games in this situation</span>
+            </div>
+            <div class="sess-tilt-value negative">${wrAfter2}%</div>
+        </div>
+        ${tilt.avg_cpl_after_loss != null ? `
+        <div class="sess-tilt-row">
+            <div class="sess-tilt-icon negative">&#9733;</div>
+            <div class="sess-tilt-label">Avg CPL after a loss vs after a win</div>
+            <div class="sess-tilt-value negative">${tilt.avg_cpl_after_loss} vs ${tilt.avg_cpl_after_win}</div>
+        </div>` : ''}
+    `;
+}
+
+function renderSessionTable(best, worst) {
+    // Merge best and worst, deduplicate by date, sort by date descending
+    const allSessions = [...(best || []), ...(worst || [])];
+    const seen = new Set();
+    const unique = [];
+    for (const s of allSessions) {
+        const key = s.date + '_' + s.games;
+        if (!seen.has(key)) {
+            seen.add(key);
+            unique.push(s);
+        }
+    }
+    unique.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+    const tbody = document.getElementById('sess-table-body');
+    tbody.innerHTML = unique.map(s => {
+        const delta = s.rating_delta ?? 0;
+        const deltaClass = delta > 0 ? 'positive' : delta < 0 ? 'negative' : 'neutral';
+        const sign = delta > 0 ? '+' : '';
+        const resultClass = s.session_result || 'breakeven';
+
+        // Build sparkline from game_ids (use W/L/D indicators)
+        const sparkline = buildSparkline(s);
+
+        return `<tr onclick="loadSessionDetail('${s.date}')" style="cursor:pointer;">
+            <td>${s.date || '—'}</td>
+            <td>${s.games}${sparkline}</td>
+            <td>${s.win_count}-${s.loss_count}-${(s.games - s.win_count - s.loss_count)}</td>
+            <td><span class="sess-delta-pill ${deltaClass}">${sign}${delta}</span></td>
+            <td>${s.longest_loss_streak > 1 ? `<span style="color:#DB5461;font-weight:700;">${s.longest_loss_streak}</span>` : (s.longest_loss_streak || '0')}</td>
+            <td><span class="sess-result-badge ${resultClass}">${resultClass.replace('_', ' ')}</span></td>
+        </tr>`;
+    }).join('');
+}
+
+function buildSparkline(session) {
+    if (!session.game_ids || session.game_ids.length < 2) return '';
+    // We don't have per-game results in the summary data, so show a visual bar proportional to W/L
+    const bars = [];
+    const w = session.win_count || 0;
+    const l = session.loss_count || 0;
+    const d = session.games - w - l;
+    for (let i = 0; i < w; i++) bars.push('win');
+    for (let i = 0; i < d; i++) bars.push('draw');
+    for (let i = 0; i < l; i++) bars.push('loss');
+
+    return `<span class="sess-sparkline">${bars.map(t =>
+        `<span class="sess-spark-bar ${t}" style="height:${t === 'win' ? '14' : t === 'loss' ? '10' : '6'}px;"></span>`
+    ).join('')}</span>`;
+}
+
+async function loadSessionDetail(date) {
+    const card = document.getElementById('sess-detail-card');
+    const detail = document.getElementById('sess-detail');
+    card.style.display = 'block';
+    detail.innerHTML = '<div class="loading"><div class="spinner"></div>Loading session...</div>';
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    try {
+        const data = await apiFetch(`/api/dashboard/sessions/${date}`);
+        if (data.error) {
+            detail.innerHTML = `<p style="color:var(--color-red);">${data.error}</p>`;
+            return;
+        }
+
+        let html = `
+            <div style="margin-bottom:16px;color:var(--color-text-secondary);font-size:13px;">
+                ${data.date} &mdash; ${data.game_count} games &mdash;
+                <span class="sess-delta-pill ${data.rating_delta > 0 ? 'positive' : data.rating_delta < 0 ? 'negative' : 'neutral'}">
+                    ${data.rating_delta > 0 ? '+' : ''}${data.rating_delta ?? 0}
+                </span>
+                &mdash; ${data.win_count}W ${data.loss_count}L ${data.draw_count}D
+                ${data.longest_loss_streak > 1 ? ` &mdash; <span style="color:#DB5461;">Longest loss streak: ${data.longest_loss_streak}</span>` : ''}
+            </div>
+        `;
+
+        if (data.games && data.games.length) {
+            data.games.forEach((g, i) => {
+                const resultClass = g.result === 'win' ? 'positive' : g.result === 'loss' ? 'negative' : '';
+                html += `
+                    <div class="sess-detail-game">
+                        <div class="sess-detail-num">${i + 1}</div>
+                        <div class="sess-detail-opening">
+                            <span class="badge badge-${g.result}" style="margin-right:8px;">${g.result}</span>
+                            ${g.opening_name || 'Unknown'}
+                            <span style="color:var(--color-text-muted);font-size:11px;margin-left:6px;">(${g.result_type})</span>
+                        </div>
+                        <div class="sess-detail-rating">${g.player_rating} vs ${g.opponent_rating}</div>
+                        <div style="font-size:12px;color:var(--color-text-muted);">${g.total_moves} moves</div>
+                        <div>
+                            <button class="btn btn-secondary btn-sm" onclick="openGameReview(${g.game_id})" style="padding:4px 10px;font-size:11px;">Review</button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        detail.innerHTML = html;
+    } catch (e) {
+        detail.innerHTML = `<p style="color:var(--color-red);">Failed to load: ${e.message}</p>`;
     }
 }
 

@@ -16,6 +16,7 @@
             <button class="nav-btn" data-view="review">REVIEW</button>
             <button class="nav-btn" data-view="patterns">PATTERNS</button>
             <button class="nav-btn" data-view="drills">DRILLS</button>
+            <button class="nav-btn" data-view="sessions">SESSIONS</button>
             <button class="nav-btn" data-view="openingbook">OPENING BOOK</button>
         </nav>
     </header>
@@ -225,6 +226,52 @@
                         <div id="drill-queue"></div>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- SESSIONS VIEW -->
+        <div id="view-sessions" class="view">
+            <div class="section-header">
+                <h2 class="section-title">Playing Sessions</h2>
+            </div>
+            <!-- Stop Point Banner -->
+            <div class="sess-stop-banner" id="sess-stop-banner"></div>
+            <!-- KPIs -->
+            <div class="kpi-grid" id="sess-kpis"></div>
+            <!-- Tilt Card + Bar Chart -->
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-header">PERFORMANCE BY SESSION LENGTH</div>
+                    <canvas id="sess-length-chart" height="220"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-header">TILT INDICATOR</div>
+                    <div id="sess-tilt"></div>
+                </div>
+            </div>
+            <!-- Session History Table -->
+            <div class="card">
+                <div class="card-header">SESSION HISTORY</div>
+                <div class="table-wrap sess-table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>DATE</th>
+                                <th>GAMES</th>
+                                <th>W / L / D</th>
+                                <th>RATING DELTA</th>
+                                <th>LOSS STREAK</th>
+                                <th>RESULT</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sess-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+            <!-- Expanded session detail (hidden by default) -->
+            <div class="card" id="sess-detail-card" style="display:none;">
+                <div class="card-header">SESSION DETAIL</div>
+                <div id="sess-detail"></div>
             </div>
         </div>
 
