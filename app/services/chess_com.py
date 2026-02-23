@@ -5,6 +5,7 @@ polite delays to respect the API rate limit (one concurrent request).
 """
 
 import logging
+import re
 import time
 from datetime import datetime, timezone
 
@@ -84,6 +85,54 @@ def _extract_opening(pgn_text: str) -> tuple[str | None, str | None]:
         return eco, opening if opening else None
     except Exception:
         return None, None
+
+
+CLK_PATTERN = re.compile(r'\[%clk (\d+):(\d+):(\d+(?:\.\d+)?)\]')
+
+
+def extract_clock_times(pgn_text: str) -> list[dict]:
+    """Extract clock times from Chess.com PGN %clk annotations.
+
+    Chess.com PGNs include {[%clk H:MM:SS]} after each move.
+
+    Returns list of {ply, clock_remaining (seconds), time_spent (seconds)}.
+    time_spent is the delta between this move's clock and the previous clock
+    for the same color.
+    """
+    clocks_raw = []
+    for m in CLK_PATTERN.finditer(pgn_text):
+        hours = int(m.group(1))
+        minutes = int(m.group(2))
+        seconds = float(m.group(3))
+        clocks_raw.append(hours * 3600 + minutes * 60 + seconds)
+
+    if not clocks_raw:
+        return []
+
+    result = []
+    prev_white = None
+    prev_black = None
+
+    for i, remaining in enumerate(clocks_raw):
+        ply = i + 1
+        is_white = (ply % 2 == 1)
+
+        if is_white:
+            time_spent = (prev_white - remaining) if prev_white is not None else 0.0
+            prev_white = remaining
+        else:
+            time_spent = (prev_black - remaining) if prev_black is not None else 0.0
+            prev_black = remaining
+
+        time_spent = max(0.0, time_spent)
+
+        result.append({
+            "ply": ply,
+            "clock_remaining": round(remaining, 1),
+            "time_spent": round(time_spent, 1),
+        })
+
+    return result
 
 
 def fetch_game_archives(username: str) -> list[str]:

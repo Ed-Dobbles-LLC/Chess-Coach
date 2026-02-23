@@ -102,6 +102,8 @@ class MoveAnalysis(Base):
     game_phase = Column(Enum(GamePhase))
     top_3_lines = Column(JSON)
     clock_times = Column(JSON)  # {player_clock: float, opponent_clock: float} in seconds remaining
+    clock_seconds = Column(Float)         # Seconds remaining after this move
+    time_spent_seconds = Column(Float)    # Seconds consumed on this move
 
     game = relationship("Game", back_populates="move_analyses")
 
@@ -192,3 +194,24 @@ class PlaySession(Base):
     avg_cpl_second_half = Column(Float) # CPL for second half of session
     longest_loss_streak = Column(Integer, default=0)
     session_result = Column(Enum(SessionResult))
+
+
+class WeeklySnapshot(Base):
+    __tablename__ = "weekly_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    week_start = Column(Date, nullable=False, unique=True, index=True)
+    week_end = Column(Date, nullable=False)
+    games_played = Column(Integer, default=0)
+    win_rate = Column(Float)
+    avg_cpl = Column(Float)
+    blunder_rate = Column(Float)  # blunders per game
+    opening_cpl = Column(Float)
+    middlegame_cpl = Column(Float)
+    endgame_cpl = Column(Float)
+    rating_start = Column(Integer)
+    rating_end = Column(Integer)
+    rating_delta = Column(Integer)
+    most_common_mistake_pattern = Column(String)
+    drill_accuracy = Column(Float)
+    time_trouble_pct = Column(Float)

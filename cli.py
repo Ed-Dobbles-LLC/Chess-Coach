@@ -1,11 +1,14 @@
 """CLI tools for Chess Coach batch operations.
 
 Usage:
-    python cli.py sync               — Sync games from Chess.com
+    python cli.py sync                — Sync games from Chess.com
     python cli.py analyze [--limit N] — Batch analyze unanalyzed blitz games
     python cli.py extract-drills      — Extract drill positions from analyzed games
     python cli.py tag-themes          — Retroactively tag tactical themes on existing drills
     python cli.py build-sessions      — Build play session records from game history
+    python cli.py backfill-clocks     — Parse clock times from PGN and update MoveAnalysis
+    python cli.py snapshot            — Compute weekly snapshot for current week
+    python cli.py backfill-snapshots  — Generate snapshots for all historical weeks
     python cli.py status              — Show database status
 """
 
@@ -156,6 +159,92 @@ def cmd_build_sessions(args):
     db.close()
 
 
+def cmd_backfill_clocks(args):
+    from app.database import SessionLocal, engine, Base
+    from app.models import models as _  # noqa: F401
+    Base.metadata.create_all(bind=engine)
+    # Add new columns if not present
+    from main import _safe_add_column
+    try:
+        _safe_add_column(engine, "move_analysis", "clock_seconds", "REAL")
+        _safe_add_column(engine, "move_analysis", "time_spent_seconds", "REAL")
+    except Exception:
+        pass
+
+    from app.models.models import Game, MoveAnalysis
+    from app.services.time_management import backfill_clocks_for_game
+
+    db = SessionLocal()
+
+    # Find games that have move analyses but no clock data yet
+    games_query = db.query(Game).filter(Game.pgn.isnot(None))
+    if args.limit:
+        games_query = games_query.order_by(Game.end_time.desc()).limit(args.limit)
+    else:
+        games_query = games_query.order_by(Game.end_time.desc())
+
+    games = games_query.all()
+    total = len(games)
+    logger.info(f"Backfilling clock data for {total} games...")
+
+    updated_games = 0
+    updated_moves = 0
+    start_time = time.time()
+
+    for i, game in enumerate(games):
+        if (i + 1) % 200 == 0 or i == 0:
+            elapsed = time.time() - start_time
+            rate = (i / elapsed * 60) if elapsed > 0 and i > 0 else 0
+            eta = ((total - i) / rate) if rate > 0 else 0
+            logger.info(f"[{i+1}/{total}] {rate:.0f} games/min | ETA: {eta:.0f} min")
+
+        count = backfill_clocks_for_game(db, game)
+        if count > 0:
+            updated_games += 1
+            updated_moves += count
+
+        if (i + 1) % 500 == 0:
+            db.commit()
+
+    db.commit()
+    total_time = time.time() - start_time
+    logger.info(
+        f"Done. Updated {updated_moves} moves across {updated_games} games "
+        f"in {total_time/60:.1f} minutes"
+    )
+    db.close()
+
+
+def cmd_snapshot(args):
+    from app.database import SessionLocal, engine, Base
+    from app.models import models as _  # noqa: F401
+    Base.metadata.create_all(bind=engine)
+    from app.services.progress import compute_current_snapshot
+
+    db = SessionLocal()
+    logger.info("Computing weekly snapshot for current week...")
+    result = compute_current_snapshot(db)
+    logger.info(f"Snapshot result: {result}")
+    db.close()
+
+
+def cmd_backfill_snapshots(args):
+    from app.database import SessionLocal, engine, Base
+    from app.models import models as _  # noqa: F401
+    Base.metadata.create_all(bind=engine)
+    from app.services.progress import backfill_all_snapshots
+
+    db = SessionLocal()
+    logger.info("Backfilling weekly snapshots for all historical weeks...")
+    result = backfill_all_snapshots(db)
+    logger.info(
+        f"Created {result['created']} new snapshots, "
+        f"updated {result['updated']}, "
+        f"total: {result.get('total_weeks', 0)} weeks"
+    )
+    db.close()
+
+
 def cmd_status(args):
     from app.database import SessionLocal
     from app.models.models import Game, GameSummary, MoveAnalysis, DrillPosition, CoachingSession, PlaySession
@@ -166,6 +255,7 @@ def cmd_status(args):
     total_games = db.query(Game).count()
     analyzed = db.query(GameSummary).count()
     total_moves = db.query(MoveAnalysis).count()
+    moves_with_clocks = db.query(MoveAnalysis).filter(MoveAnalysis.clock_seconds.isnot(None)).count()
     drills = db.query(DrillPosition).count()
     drills_with_themes = db.query(DrillPosition).filter(DrillPosition.tactical_theme.isnot(None)).count()
     coaching = db.query(CoachingSession).count()
@@ -173,6 +263,11 @@ def cmd_status(args):
         play_sessions = db.query(PlaySession).count()
     except Exception:
         play_sessions = 0
+    try:
+        from app.models.models import WeeklySnapshot
+        snapshots = db.query(WeeklySnapshot).count()
+    except Exception:
+        snapshots = 0
 
     print(f"\n{'='*40}")
     print(f"  CHESS COACH DATABASE STATUS")
@@ -180,10 +275,12 @@ def cmd_status(args):
     print(f"  Games:          {total_games:,}")
     print(f"  Analyzed:       {analyzed:,} ({analyzed/total_games*100:.1f}%)" if total_games else "  Analyzed: 0")
     print(f"  Move analyses:  {total_moves:,}")
+    print(f"  Moves w/clocks: {moves_with_clocks:,}")
     print(f"  Drill positions:{drills:,}")
     print(f"  Drills w/themes:{drills_with_themes:,}")
     print(f"  Coach sessions: {coaching:,}")
     print(f"  Play sessions:  {play_sessions:,}")
+    print(f"  Weekly snaps:   {snapshots:,}")
     print(f"{'='*40}\n")
 
     db.close()
@@ -206,6 +303,12 @@ def main():
 
     sub.add_parser("build-sessions", help="Build play session records")
 
+    bc_p = sub.add_parser("backfill-clocks", help="Parse clock times from PGN and update MoveAnalysis")
+    bc_p.add_argument("--limit", type=int, default=None, help="Max games to process")
+
+    sub.add_parser("snapshot", help="Compute weekly snapshot for current week")
+    sub.add_parser("backfill-snapshots", help="Generate snapshots for all historical weeks")
+
     sub.add_parser("status", help="Show database status")
 
     args = parser.parse_args()
@@ -220,6 +323,12 @@ def main():
         cmd_tag_themes(args)
     elif args.command == "build-sessions":
         cmd_build_sessions(args)
+    elif args.command == "backfill-clocks":
+        cmd_backfill_clocks(args)
+    elif args.command == "snapshot":
+        cmd_snapshot(args)
+    elif args.command == "backfill-snapshots":
+        cmd_backfill_snapshots(args)
     elif args.command == "status":
         cmd_status(args)
     else:

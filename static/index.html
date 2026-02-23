@@ -17,6 +17,7 @@
             <button class="nav-btn" data-view="patterns">PATTERNS</button>
             <button class="nav-btn" data-view="drills">DRILLS</button>
             <button class="nav-btn" data-view="sessions">SESSIONS</button>
+            <button class="nav-btn" data-view="progress">PROGRESS</button>
             <button class="nav-btn" data-view="openingbook">OPENING BOOK</button>
         </nav>
     </header>
@@ -33,6 +34,7 @@
                 <div class="card">
                     <div class="card-header">QUICK ACTIONS</div>
                     <div class="quick-actions">
+                        <button class="btn btn-warmup" onclick="startWarmUp()">Warm Up (5 min)</button>
                         <button class="btn btn-primary" onclick="syncGames()">Sync Games from Chess.com</button>
                         <button class="btn btn-secondary" onclick="navigateTo('games')">Browse Games</button>
                         <button class="btn btn-secondary" onclick="navigateTo('drills')">Start Drill Session</button>
@@ -206,6 +208,15 @@
                 <div class="actions-row">
                     <button class="btn btn-secondary btn-sm" onclick="extractDrills()">Extract New Drills</button>
                     <button class="btn btn-primary btn-sm" onclick="loadDrills()">Load Drills</button>
+                    <button class="btn btn-secondary btn-sm" id="btn-replay-mode" onclick="startReplayMode()">What Would You Play?</button>
+                </div>
+            </div>
+            <!-- Replay mode container (hidden by default) -->
+            <div id="replay-container" style="display:none;">
+                <div class="replay-header-bar">
+                    <div class="replay-progress" id="replay-progress"></div>
+                    <div class="replay-accuracy" id="replay-accuracy"></div>
+                    <button class="btn btn-sm" onclick="exitReplayMode()">Exit</button>
                 </div>
             </div>
             <div class="kpi-grid" id="drill-kpis"></div>
@@ -214,8 +225,8 @@
                     <div class="board-container" id="drill-board"></div>
                     <div class="drill-prompt" id="drill-prompt">Find the best move!</div>
                     <div class="drill-input">
-                        <input type="text" id="drill-answer" placeholder="Enter move (e.g., Nf3)" onkeydown="if(event.key==='Enter')submitDrill()">
-                        <button class="btn btn-primary" onclick="submitDrill()">Submit</button>
+                        <input type="text" id="drill-answer" placeholder="Enter move (e.g., Nf3)" onkeydown="if(event.key==='Enter')submitDrillOrReplay()">
+                        <button class="btn btn-primary" onclick="submitDrillOrReplay()">Submit</button>
                     </div>
                     <div id="drill-feedback" style="display:none;"></div>
                     <button class="btn btn-secondary" id="btn-next-drill" onclick="nextDrill()" style="display:none;width:100%;">Next Drill</button>
@@ -272,6 +283,45 @@
             <div class="card" id="sess-detail-card" style="display:none;">
                 <div class="card-header">SESSION DETAIL</div>
                 <div id="sess-detail"></div>
+            </div>
+        </div>
+
+        <!-- PROGRESS VIEW -->
+        <div id="view-progress" class="view">
+            <div class="section-header">
+                <h2 class="section-title">Progress Tracking</h2>
+                <div class="actions-row">
+                    <button class="btn btn-primary btn-sm" onclick="generateMonthlyReport()">Generate Monthly Report</button>
+                </div>
+            </div>
+            <!-- Rating sparkline -->
+            <div class="card">
+                <div class="card-header">RATING TREND</div>
+                <canvas id="progress-rating-chart" height="180"></canvas>
+            </div>
+            <div class="kpi-grid" id="progress-kpis"></div>
+            <!-- Trends -->
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-header">WEEKLY METRICS</div>
+                    <canvas id="progress-cpl-chart" height="200"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-header">BLUNDER RATE TREND</div>
+                    <canvas id="progress-blunder-chart" height="200"></canvas>
+                </div>
+            </div>
+            <!-- Time Management -->
+            <div class="card" id="time-mgmt-card">
+                <div class="card-header">TIME MANAGEMENT</div>
+                <div id="time-mgmt-content">
+                    <div class="loading"><div class="spinner"></div>Loading time data...</div>
+                </div>
+            </div>
+            <!-- Monthly report -->
+            <div class="card" id="monthly-report-card" style="display:none;">
+                <div class="card-header">MONTHLY REPORT</div>
+                <div id="monthly-report-text" class="coaching-content" style="max-height:none;"></div>
             </div>
         </div>
 

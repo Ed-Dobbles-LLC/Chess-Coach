@@ -1304,6 +1304,55 @@ select.filter-select:hover {
 .sess-spark-bar.loss { background: #DB5461; }
 .sess-spark-bar.draw { background: var(--color-blue); }
 
+/* ── Warm Up Button ── */
+.btn-warmup {
+    background: linear-gradient(135deg, #f97316, #ef4444);
+    color: #fff;
+    font-weight: 700;
+    font-size: 14px;
+    padding: 14px 24px;
+    box-shadow: 0 4px 16px rgba(249, 115, 22, 0.3);
+    border: none;
+}
+.btn-warmup:hover {
+    background: linear-gradient(135deg, #ea580c, #dc2626);
+    box-shadow: 0 6px 20px rgba(249, 115, 22, 0.4);
+    transform: translateY(-1px);
+}
+
+/* ── Replay Mode (What Would You Play?) ── */
+.replay-header-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--color-bg-raised);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    border-radius: var(--radius-md);
+    padding: 12px 20px;
+    margin-bottom: 16px;
+}
+.replay-header-bar::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--color-blue), var(--color-purple));
+}
+.replay-progress {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+}
+.replay-accuracy {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--color-teal);
+    font-family: var(--font-mono);
+    margin-left: auto;
+}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

@@ -600,3 +600,73 @@ Be direct. Reference the actual numbers. This player is an executive — no fluf
         "narrative": narrative_text,
         "session_id": session.id,
     }
+
+
+def generate_monthly_report(db: Session, progress: dict) -> dict:
+    """Generate a narrative monthly progress report using Claude Opus.
+
+    Compares the last 4 weekly snapshots against the previous 4 and
+    generates a coaching narrative.
+    """
+    import json
+
+    snapshots = progress.get("snapshots", [])
+    trends = progress.get("trends", {})
+
+    if len(snapshots) < 2:
+        return {"error": "Need at least 2 weeks of data for a monthly report."}
+
+    # Split into this month (last 4) and last month (prev 4)
+    recent = snapshots[-4:]
+    previous = snapshots[-8:-4] if len(snapshots) >= 8 else snapshots[:-4]
+
+    prompt = f"""You are a chess coach writing a monthly progress report for eddobbles2021 (800-1200 rated blitz player).
+
+THIS MONTH'S WEEKLY SNAPSHOTS (most recent):
+{json.dumps(recent, indent=2)}
+
+PREVIOUS PERIOD SNAPSHOTS (for comparison):
+{json.dumps(previous, indent=2)}
+
+COMPUTED TRENDS:
+{json.dumps(trends, indent=2)}
+
+Write a monthly progress report with these sections:
+
+1. HEADLINE — One sentence summarizing the month (e.g., "A month of steady improvement in endgames, offset by increasing time trouble.")
+
+2. WHAT IMPROVED — Specific metrics that got better. Reference the actual numbers.
+
+3. WHAT REGRESSED — Specific metrics that got worse. Be honest.
+
+4. KEY INSIGHT — The single most important observation from the data. Connect patterns.
+
+5. FOCUS FOR NEXT MONTH — One specific, measurable goal (e.g., "Reduce middlegame CPL from 65 to 55 by doing 3 tactical puzzles before each session").
+
+Be concise, direct, and data-driven. No fluff. Write as a coach who cares about results, not feelings."""
+
+    client = _get_client()
+    response = client.messages.create(
+        model=OPUS_MODEL,
+        max_tokens=1500,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    report_text = response.content[0].text
+
+    session = CoachingSession(
+        game_id=None,
+        session_type=SessionType.pattern_diagnosis,
+        prompt_sent=prompt,
+        response=report_text,
+        model_used=OPUS_MODEL,
+    )
+    db.add(session)
+    db.commit()
+
+    return {
+        "report": report_text,
+        "snapshots_used": len(snapshots),
+        "trends": trends,
+        "session_id": session.id,
+    }
