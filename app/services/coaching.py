@@ -528,3 +528,75 @@ Respond in EXACTLY this format — one section per moment, using XML tags:
         "commentary_points": commentary_points,
         "narrative_summary": narrative_summary,
     }
+
+
+def generate_behavioral_narrative(db: Session, patterns: list[dict]) -> dict:
+    """Send behavioral pattern data to Claude Opus for narrative diagnosis."""
+    import json
+
+    # Build pattern summary for the prompt
+    pattern_sections = []
+    for p in patterns:
+        if p.get("frequency", 0) == 0 and "Insufficient" in p.get("frequency_label", ""):
+            continue
+        section = f"""PATTERN: {p['pattern_name']}
+Description: {p.get('description', '')}
+Frequency: {p.get('frequency_label', '')}
+Impact: {p.get('impact_label', '')}
+Severity: {p.get('severity', 'low')}
+Details: {json.dumps(p.get('detail', {}), indent=2)}
+Example game IDs: {p.get('example_game_ids', [])}"""
+        pattern_sections.append(section)
+
+    if not pattern_sections:
+        return {
+            "patterns": patterns,
+            "narrative": "Insufficient data for behavioral analysis. Analyze more games first.",
+        }
+
+    patterns_text = "\n\n".join(pattern_sections)
+
+    prompt = f"""You are a chess coach providing a behavioral analysis for eddobbles2021 (800-1200 rated blitz player, 5,000+ games on Chess.com).
+
+Below are BEHAVIORAL PATTERNS mined from their complete game history. These are not per-game stats — they are cross-game tendencies detected by analyzing thousands of games.
+
+{patterns_text}
+
+Provide a narrative behavioral diagnosis:
+
+1. RANKING — Rank the patterns by impact on rating. Which habit costs the most Elo?
+2. CONNECTIONS — How do these patterns relate to each other? (e.g., time trouble → more blunders → tilt → losing streaks)
+3. SPECIFIC GAME REFERENCES — Reference the example game IDs where patterns are most visible
+4. ROOT CAUSES — What underlying chess understanding gaps produce these patterns?
+5. PRIORITIZED IMPROVEMENT PLAN — A concrete 3-step plan, ordered by expected Elo gain:
+   - Step 1: The single behavior change that would gain the most rating points
+   - Step 2: The second-highest impact change
+   - Step 3: A practice routine to reinforce both
+
+Be direct. Reference the actual numbers. This player is an executive — no fluff, no generic advice. Write as if you're sitting across the table from them with a laptop open to their game history."""
+
+    client = _get_client()
+    response = client.messages.create(
+        model=OPUS_MODEL,
+        max_tokens=2000,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    narrative_text = response.content[0].text
+
+    # Store in coaching_sessions
+    session = CoachingSession(
+        game_id=None,
+        session_type=SessionType.behavioral_analysis,
+        prompt_sent=prompt,
+        response=narrative_text,
+        model_used=OPUS_MODEL,
+    )
+    db.add(session)
+    db.commit()
+
+    return {
+        "patterns": patterns,
+        "narrative": narrative_text,
+        "session_id": session.id,
+    }

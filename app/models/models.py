@@ -46,6 +46,7 @@ class SessionType(str, enum.Enum):
     game_review = "game_review"
     pattern_diagnosis = "pattern_diagnosis"
     drill = "drill"
+    behavioral_analysis = "behavioral_analysis"
 
 
 class Game(Base):
@@ -100,6 +101,7 @@ class MoveAnalysis(Base):
     depth = Column(Integer)
     game_phase = Column(Enum(GamePhase))
     top_3_lines = Column(JSON)
+    clock_times = Column(JSON)  # {player_clock: float, opponent_clock: float} in seconds remaining
 
     game = relationship("Game", back_populates="move_analyses")
 

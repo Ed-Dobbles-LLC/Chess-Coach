@@ -14,11 +14,27 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 logger = logging.getLogger(__name__)
 
 
+def _safe_add_column(engine, table_name: str, column_name: str, column_type: str):
+    """Add a column if it doesn't already exist. Works for SQLite and Postgres."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    existing = [c["name"] for c in insp.get_columns(table_name)]
+    if column_name not in existing:
+        with engine.begin() as conn:
+            conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
+        logger.info(f"Added column {table_name}.{column_name}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create tables on startup
     logger.info("Creating database tables...")
     Base.metadata.create_all(bind=engine)
+    # Migrate new columns onto existing tables
+    try:
+        _safe_add_column(engine, "move_analysis", "clock_times", "TEXT")
+    except Exception as e:
+        logger.warning(f"Column migration skipped: {e}")
     logger.info("Database tables ready.")
     yield
 

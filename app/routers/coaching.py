@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.models import Game, CoachingSession
 from app.services.coaching import explain_move, review_game, generate_pattern_diagnosis, generate_walkthrough
+from app.services.behavior import detect_all_patterns
 
 router = APIRouter(prefix="/api/coach", tags=["coaching"])
 
@@ -55,6 +56,15 @@ def coach_walkthrough(game_id: int, db: Session = Depends(get_db)):
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
 
+    return result
+
+
+@router.post("/behavioral-analysis")
+def coach_behavioral_analysis(db: Session = Depends(get_db)):
+    """Run all behavioral pattern detectors and generate Claude narrative."""
+    from app.services.coaching import generate_behavioral_narrative
+    patterns = detect_all_patterns(db)
+    result = generate_behavioral_narrative(db, patterns)
     return result
 
 
