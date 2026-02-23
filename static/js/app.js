@@ -8,6 +8,13 @@ let currentPly = 0;
 let drillQueue = [];
 let currentDrill = null;
 
+// Walkthrough state
+let wtData = null;          // Full walkthrough API response
+let wtIndex = 0;            // Current commentary point index
+let wtAutoplayTimer = null;  // Autoplay interval ID
+let wtAutoplayPly = 0;      // Current ply during autoplay
+let wtActive = false;        // Whether walkthrough mode is active
+
 // ── Navigation ──
 document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.addEventListener('click', () => navigateTo(btn.dataset.view));
@@ -266,6 +273,9 @@ async function analyzeGame(gameId) {
 
 // ── Game Review ──
 async function openGameReview(gameId) {
+    // Reset walkthrough state if active
+    if (wtActive) exitWalkthrough();
+
     currentGameId = gameId;
     navigateTo('review');
 
@@ -379,6 +389,9 @@ function goToPly(ply) {
     renderBoard(currentAnalysis.moves, ply, currentAnalysis.player_color);
     updateEvalBar(move.eval_before, move.eval_after);
 
+    // In walkthrough mode, don't overwrite the coaching panel from individual move clicks
+    if (wtActive) return;
+
     // If it's a player move with a mistake/blunder, auto-fetch coaching
     if (move.is_player_move && move.classification &&
         ['inaccuracy', 'mistake', 'blunder'].includes(move.classification)) {
@@ -434,6 +447,253 @@ async function requestGameReview() {
     }
 }
 
+// ── Walkthrough ──
+async function startWalkthrough() {
+    if (!currentGameId || !currentAnalysis) return;
+    const btn = document.getElementById('btn-walkthrough');
+    btn.disabled = true;
+    btn.textContent = 'Loading...';
+
+    try {
+        wtData = await apiFetch(`/api/coach/walkthrough/${currentGameId}`, { method: 'POST' });
+        if (!wtData.commentary_points || wtData.commentary_points.length === 0) {
+            showToast('No commentary points found for this game.', 'error');
+            return;
+        }
+        wtActive = true;
+        wtIndex = 0;
+
+        // Show walkthrough UI
+        document.getElementById('walkthrough-container').style.display = 'block';
+
+        // Render story banner
+        const banner = document.getElementById('wt-story-banner');
+        banner.innerHTML = `
+            <span class="wt-story-label">Game Story</span>
+            ${wtData.narrative_summary || 'Walkthrough ready.'}
+        `;
+
+        // Jump to first commentary point
+        wtGoToMoment(0);
+    } catch (e) {
+        showToast('Walkthrough failed: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Walkthrough';
+    }
+}
+
+function exitWalkthrough() {
+    wtActive = false;
+    wtData = null;
+    wtStopAutoplay();
+    document.getElementById('walkthrough-container').style.display = 'none';
+    document.getElementById('wt-autoplay').checked = false;
+
+    // Restore normal coaching panel
+    document.getElementById('coaching-content').innerHTML = `
+        <h3>COACHING</h3>
+        <p>Click any move to get AI coaching explanation.</p>
+    `;
+}
+
+function wtGoToMoment(index) {
+    if (!wtData || !wtData.commentary_points.length) return;
+    wtIndex = Math.max(0, Math.min(index, wtData.commentary_points.length - 1));
+    const cp = wtData.commentary_points[wtIndex];
+
+    // Update progress indicator
+    document.getElementById('wt-progress').innerHTML = `
+        Moment <span class="wt-moment-num">${wtIndex + 1}</span> of <span class="wt-moment-num">${wtData.commentary_points.length}</span>
+    `;
+
+    // Update prev/next button states
+    document.getElementById('wt-btn-prev').disabled = wtIndex === 0;
+    document.getElementById('wt-btn-next').disabled = wtIndex === wtData.commentary_points.length - 1;
+
+    // Jump board to this ply
+    goToPly(cp.ply);
+
+    // Pulse animation
+    const boardEl = document.getElementById('chess-board');
+    boardEl.classList.remove('wt-pulse');
+    void boardEl.offsetWidth; // force reflow
+    boardEl.classList.add('wt-pulse');
+
+    // Render coaching commentary
+    renderWtCommentary(cp);
+}
+
+function renderWtCommentary(cp) {
+    const panel = document.getElementById('coaching-content');
+
+    const evalBefore = cp.eval_before != null ? cp.eval_before : 0;
+    const evalAfter = cp.eval_after != null ? cp.eval_after : 0;
+    const evalBeforeDisplay = Math.abs(evalBefore) >= 10000
+        ? (evalBefore > 0 ? 'M+' : 'M-') : (evalBefore / 100).toFixed(1);
+    const evalAfterDisplay = Math.abs(evalAfter) >= 10000
+        ? (evalAfter > 0 ? 'M+' : 'M-') : (evalAfter / 100).toFixed(1);
+    const evalBeforeClass = evalBefore > 20 ? 'positive' : evalBefore < -20 ? 'negative' : '';
+    const evalAfterClass = evalAfter > 20 ? 'positive' : evalAfter < -20 ? 'negative' : '';
+
+    const colorIcon = cp.color === 'white' ? '&#9812;' : '&#9818;';
+    const moveLabel = `${cp.move_number}${cp.color === 'white' ? '.' : '...'} ${cp.move_played}`;
+
+    // Badge type — use the type field from API
+    const badgeType = cp.type || cp.classification || '';
+    const badgeLabel = badgeType.replace(/_/g, ' ');
+
+    // Best move comparison
+    const showBest = cp.best_move && cp.best_move !== cp.move_played;
+
+    panel.innerHTML = `
+        <div class="wt-coaching-header">
+            <span style="font-size:22px;">${colorIcon}</span>
+            <span class="wt-move-label">${moveLabel}</span>
+            <span class="wt-classification-badge ${badgeType}">${badgeLabel}</span>
+        </div>
+        <div class="wt-eval-row">
+            <span class="wt-eval-val ${evalBeforeClass}">${evalBeforeDisplay}</span>
+            <span class="wt-arrow">&#8594;</span>
+            <span class="wt-eval-val ${evalAfterClass}">${evalAfterDisplay}</span>
+            <span style="margin-left:8px;color:var(--color-text-muted);">${cp.game_phase || ''}</span>
+        </div>
+        ${showBest ? `<div class="wt-moves-row">
+            Played <span class="notation">${cp.move_played}</span>
+            &nbsp;&middot;&nbsp; Best was <span class="notation">${cp.best_move}</span>
+        </div>` : ''}
+        <div class="wt-commentary-text">${cp.commentary}</div>
+    `;
+}
+
+function wtNav(dir) {
+    if (!wtData) return;
+    // If autoplay is running, stop it
+    wtStopAutoplay();
+    document.getElementById('wt-autoplay').checked = false;
+
+    if (dir === 'prev') wtGoToMoment(wtIndex - 1);
+    else if (dir === 'next') wtGoToMoment(wtIndex + 1);
+}
+
+function wtToggleAutoplay() {
+    const checked = document.getElementById('wt-autoplay').checked;
+    if (checked) {
+        wtStartAutoplay();
+    } else {
+        wtStopAutoplay();
+    }
+}
+
+function wtStartAutoplay() {
+    if (!wtData || !currentAnalysis) return;
+
+    // Start from ply 1 (or current commentary point's ply)
+    const cp = wtData.commentary_points[wtIndex];
+    wtAutoplayPly = wtIndex === 0 ? 0 : cp.ply;
+
+    // Build a set of commentary plies for quick lookup
+    const commentaryPlies = new Set(wtData.commentary_points.map(c => c.ply));
+
+    const maxPly = currentAnalysis.moves[currentAnalysis.moves.length - 1].ply;
+
+    wtAutoplayTimer = setInterval(() => {
+        wtAutoplayPly++;
+        if (wtAutoplayPly > maxPly) {
+            wtStopAutoplay();
+            document.getElementById('wt-autoplay').checked = false;
+            return;
+        }
+
+        // Navigate board
+        goToPly(wtAutoplayPly);
+
+        // If this is a commentary point, pause and show it
+        if (commentaryPlies.has(wtAutoplayPly)) {
+            const cpIdx = wtData.commentary_points.findIndex(c => c.ply === wtAutoplayPly);
+            if (cpIdx >= 0) {
+                wtIndex = cpIdx;
+
+                // Update progress
+                document.getElementById('wt-progress').innerHTML = `
+                    Moment <span class="wt-moment-num">${wtIndex + 1}</span> of <span class="wt-moment-num">${wtData.commentary_points.length}</span>
+                `;
+                document.getElementById('wt-btn-prev').disabled = wtIndex === 0;
+                document.getElementById('wt-btn-next').disabled = wtIndex === wtData.commentary_points.length - 1;
+
+                // Pulse
+                const boardEl = document.getElementById('chess-board');
+                boardEl.classList.remove('wt-pulse');
+                void boardEl.offsetWidth;
+                boardEl.classList.add('wt-pulse');
+
+                renderWtCommentary(wtData.commentary_points[cpIdx]);
+
+                // Pause for 5 seconds at commentary points, then resume
+                clearInterval(wtAutoplayTimer);
+                wtAutoplayTimer = setTimeout(() => {
+                    // Resume autoplay after pause
+                    if (document.getElementById('wt-autoplay').checked) {
+                        wtStartAutoplayFrom(wtAutoplayPly);
+                    }
+                }, 5000);
+            }
+        }
+    }, 1000);
+}
+
+function wtStartAutoplayFrom(fromPly) {
+    if (!wtData || !currentAnalysis) return;
+    wtAutoplayPly = fromPly;
+    const commentaryPlies = new Set(wtData.commentary_points.map(c => c.ply));
+    const maxPly = currentAnalysis.moves[currentAnalysis.moves.length - 1].ply;
+
+    wtAutoplayTimer = setInterval(() => {
+        wtAutoplayPly++;
+        if (wtAutoplayPly > maxPly) {
+            wtStopAutoplay();
+            document.getElementById('wt-autoplay').checked = false;
+            return;
+        }
+
+        goToPly(wtAutoplayPly);
+
+        if (commentaryPlies.has(wtAutoplayPly)) {
+            const cpIdx = wtData.commentary_points.findIndex(c => c.ply === wtAutoplayPly);
+            if (cpIdx >= 0) {
+                wtIndex = cpIdx;
+                document.getElementById('wt-progress').innerHTML = `
+                    Moment <span class="wt-moment-num">${wtIndex + 1}</span> of <span class="wt-moment-num">${wtData.commentary_points.length}</span>
+                `;
+                document.getElementById('wt-btn-prev').disabled = wtIndex === 0;
+                document.getElementById('wt-btn-next').disabled = wtIndex === wtData.commentary_points.length - 1;
+
+                const boardEl = document.getElementById('chess-board');
+                boardEl.classList.remove('wt-pulse');
+                void boardEl.offsetWidth;
+                boardEl.classList.add('wt-pulse');
+
+                renderWtCommentary(wtData.commentary_points[cpIdx]);
+
+                clearInterval(wtAutoplayTimer);
+                wtAutoplayTimer = setTimeout(() => {
+                    if (document.getElementById('wt-autoplay').checked) {
+                        wtStartAutoplayFrom(wtAutoplayPly);
+                    }
+                }, 5000);
+            }
+        }
+    }, 1000);
+}
+
+function wtStopAutoplay() {
+    if (wtAutoplayTimer) {
+        clearInterval(wtAutoplayTimer);
+        clearTimeout(wtAutoplayTimer);
+        wtAutoplayTimer = null;
+    }
+}
+
 function updateEvalBar(evalBefore, evalAfter) {
     const eval_val = evalAfter ?? evalBefore ?? 0;
     const clamped = Math.max(-500, Math.min(500, eval_val));
@@ -457,6 +717,13 @@ function boardNav(dir) {
 // Keyboard navigation
 document.addEventListener('keydown', e => {
     if (currentView !== 'review' || !currentAnalysis) return;
+    // In walkthrough mode, left/right navigate between commentary points
+    if (wtActive) {
+        if (e.key === 'ArrowLeft') { e.preventDefault(); wtNav('prev'); }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); wtNav('next'); }
+        else if (e.key === 'Escape') { e.preventDefault(); exitWalkthrough(); }
+        return;
+    }
     if (e.key === 'ArrowLeft') { e.preventDefault(); boardNav('prev'); }
     if (e.key === 'ArrowRight') { e.preventDefault(); boardNav('next'); }
     if (e.key === 'Home') { e.preventDefault(); boardNav('start'); }

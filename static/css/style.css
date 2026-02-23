@@ -948,6 +948,205 @@ select.filter-select:hover {
 /* ── Analyzed checkmark ── */
 .check-yes { color: var(--color-teal); font-size: 16px; }
 
+/* ── Walkthrough ── */
+.wt-story-banner {
+    background: var(--color-navy-light);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: var(--radius-md);
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--color-text-secondary);
+    position: relative;
+    overflow: hidden;
+}
+.wt-story-banner::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--color-blue), var(--color-sky));
+}
+.wt-story-banner .wt-story-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-sky);
+    margin-bottom: 6px;
+    display: block;
+}
+
+.wt-controls {
+    background: var(--color-bg-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 12px 16px;
+    margin-bottom: 16px;
+}
+.wt-progress {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-align: center;
+    margin-bottom: 10px;
+    letter-spacing: 0.03em;
+}
+.wt-progress .wt-moment-num {
+    color: var(--color-sky);
+    font-family: var(--font-mono);
+}
+.wt-nav-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.wt-toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+}
+.wt-toggle-label input[type="checkbox"] {
+    appearance: none;
+    width: 36px;
+    height: 20px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-full);
+    position: relative;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+.wt-toggle-label input[type="checkbox"]::after {
+    content: '';
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    background: var(--color-text-muted);
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    transition: all var(--transition-fast);
+}
+.wt-toggle-label input[type="checkbox"]:checked {
+    background: var(--color-blue);
+    border-color: var(--color-blue);
+}
+.wt-toggle-label input[type="checkbox"]:checked::after {
+    background: #fff;
+    left: 18px;
+}
+.wt-toggle-text {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+}
+
+/* Walkthrough commentary in coaching panel */
+.wt-coaching-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.wt-coaching-header .wt-move-label {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--color-text);
+    font-family: var(--font-mono);
+}
+.wt-classification-badge {
+    display: inline-block;
+    padding: 3px 12px;
+    border-radius: var(--radius-full);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.wt-classification-badge.blunder {
+    background: var(--color-red-dim);
+    color: var(--color-red);
+}
+.wt-classification-badge.mistake {
+    background: rgba(249, 115, 22, 0.15);
+    color: var(--color-orange);
+}
+.wt-classification-badge.inaccuracy {
+    background: var(--color-amber-dim);
+    color: var(--color-amber);
+}
+.wt-classification-badge.good,
+.wt-classification-badge.excellent,
+.wt-classification-badge.best {
+    background: var(--color-teal-dim);
+    color: var(--color-teal);
+}
+.wt-classification-badge.game_end {
+    background: var(--color-blue-dim);
+    color: var(--color-blue);
+}
+.wt-classification-badge.significant_swing {
+    background: var(--color-amber-dim);
+    color: var(--color-amber);
+}
+.wt-classification-badge.phase_transition {
+    background: rgba(167, 139, 250, 0.15);
+    color: var(--color-purple);
+}
+.wt-classification-badge.critical_moment {
+    background: var(--color-red-dim);
+    color: var(--color-red);
+}
+
+.wt-eval-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+}
+.wt-eval-row .wt-arrow {
+    color: var(--color-text-muted);
+}
+.wt-eval-val {
+    font-weight: 700;
+}
+.wt-eval-val.positive { color: var(--color-teal); }
+.wt-eval-val.negative { color: var(--color-red); }
+
+.wt-moves-row {
+    font-size: 12px;
+    margin-bottom: 14px;
+    color: var(--color-text-muted);
+}
+.wt-moves-row .notation {
+    font-size: 12px;
+}
+
+.wt-commentary-text {
+    font-size: 14px;
+    line-height: 1.8;
+    color: var(--color-text-secondary);
+}
+
+/* Board pulse animation on commentary point arrival */
+@keyframes wtBoardPulse {
+    0% { box-shadow: var(--shadow-lg); }
+    50% { box-shadow: 0 0 24px rgba(59, 130, 246, 0.35), var(--shadow-lg); }
+    100% { box-shadow: var(--shadow-lg); }
+}
+.board-container.wt-pulse {
+    animation: wtBoardPulse 800ms ease-in-out;
+}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

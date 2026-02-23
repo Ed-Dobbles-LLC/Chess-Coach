@@ -97,6 +97,23 @@
                     <div id="review-header"></div>
                     <div class="actions-row">
                         <button class="btn btn-primary btn-sm" id="btn-coach-review" onclick="requestGameReview()">Get AI Review</button>
+                        <button class="btn btn-secondary btn-sm" id="btn-walkthrough" onclick="startWalkthrough()">Walkthrough</button>
+                    </div>
+                </div>
+                <!-- Walkthrough banner + controls (hidden by default) -->
+                <div id="walkthrough-container" style="display:none;">
+                    <div class="wt-story-banner" id="wt-story-banner"></div>
+                    <div class="wt-controls">
+                        <div class="wt-progress" id="wt-progress"></div>
+                        <div class="wt-nav-row">
+                            <button class="btn btn-secondary btn-sm" id="wt-btn-prev" onclick="wtNav('prev')">&#8592; Previous</button>
+                            <label class="wt-toggle-label">
+                                <input type="checkbox" id="wt-autoplay" onchange="wtToggleAutoplay()">
+                                <span class="wt-toggle-text">Play All Moves</span>
+                            </label>
+                            <button class="btn btn-secondary btn-sm" id="wt-btn-next" onclick="wtNav('next')">Next &#8594;</button>
+                            <button class="btn btn-sm" id="wt-btn-exit" onclick="exitWalkthrough()" style="margin-left:auto;">Exit Walkthrough</button>
+                        </div>
                     </div>
                 </div>
                 <div class="review-layout">
