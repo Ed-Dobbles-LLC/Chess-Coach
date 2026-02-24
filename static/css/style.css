@@ -471,6 +471,15 @@ tbody tr:active td { background: rgba(255, 255, 255, 0.05); }
 .board-coord-on-light { color: #b08968; }
 .board-coord-on-dark { color: #e8dab3; }
 
+.piece-white {
+    color: #fff;
+    text-shadow: 0 0 2px rgba(0,0,0,0.6);
+}
+.piece-black {
+    color: #1a1a1a;
+    text-shadow: 0 0 2px rgba(255,255,255,0.4);
+}
+
 /* Board navigation */
 .board-nav {
     display: flex;
