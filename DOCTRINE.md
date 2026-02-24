@@ -77,6 +77,7 @@ If you hand me something and it breaks on first use, that's a failure of process
 | AI/LLM | Anthropic Claude (primary), OpenAI (secondary) |
 | Auth | Google OAuth |
 | Automation / Queues | Inngest |
+| TTS / Audio | ElevenLabs |
 ### Environment Variables (always present — never ask me to set these up)
 ```
 ANTHROPIC_API_KEY
@@ -104,7 +105,120 @@ Access via `os.environ["VAR_NAME"]` in Python or `$env:VAR_NAME` in PowerShell. 
 - Document the Railway service name in each project README
 - Default to Python + FastAPI or Flask for web services
 ---
-## 4. BRAND & DESIGN SYSTEM
+## 4. SKILLS, MCP SERVERS & CONNECTORS — USE THEM PROACTIVELY
+You have skills, MCP connections, and claude.ai connectors available. Don't wait for me to ask — if a capability makes the task faster, more reliable, or better tested, use it. If you think one would help but aren't sure it applies, recommend it and explain the tradeoff. Never ignore a capability that's sitting right there.
+### Operating Rules
+1. **Use skills and connectors automatically** when the task matches their purpose. Don't ask permission. If I'm asking you to write a dbt model, use the dbt skills. If I'm asking you to deploy and verify, use Playwright. If I need company research, use Apollo or Clay. Just do it.
+2. **Recommend proactively** when a tool would improve quality but isn't an obvious match. Example: I ask you to build a feature — recommend verification-before-completion and test-driven-development before starting, not after I find the bugs.
+3. **Chain skills together.** A feature request should trigger writing-plans → subagent-driven-development → test-driven-development → verification-before-completion → git-pushing. Don't treat skills as isolated tools.
+4. **Never skip testing because a skill exists.** Skills augment the Quality Gate (Section 2), they don't replace it. Playwright verifying a deployment doesn't mean you skip checking the response yourself.
+5. **Combine connectors with skills.** Research a company on Apollo, draft the outreach in Gmail, schedule the follow-up on Google Calendar. Think in workflows, not individual tool calls.
+### Claude Code Skills (31 total)
+#### Engineering Workflow (User Skills — `~/.claude/skills/`)
+| Skill | When to Use | Use Automatically? |
+|-------|-------------|-------------------|
+| `git-pushing` | Any task that ends with code ready to commit or deploy | Yes |
+| `test-fixing` | Any failing test — use before asking me to intervene | Yes |
+| `webapp-testing` | After building or modifying any web application | Yes |
+| `codebase-documenter` | When creating handoff docs, onboarding a new repo, or I ask for documentation | Recommend first |
+| `mcp-builder` | When I need a new MCP server integration | Recommend first |
+| `skill-creator` | When a repeated workflow should become a reusable skill | Recommend first |
+#### Data Engineering (AltimateAI Plugins)
+| Skill | When to Use | Use Automatically? |
+|-------|-------------|-------------------|
+| `creating-dbt-models` | Any new dbt model creation | Yes |
+| `developing-incremental-models` | When building incremental/snapshot models | Yes |
+| `testing-dbt-models` | After creating or modifying any dbt model | Yes |
+| `documenting-dbt-models` | After any dbt model is created or significantly changed | Yes |
+| `debugging-dbt-errors` | When any dbt run or test fails | Yes |
+| `refactoring-dbt-models` | When improving existing model structure or performance | Yes |
+| `migrating-sql-to-dbt` | When converting raw SQL to dbt models | Yes |
+| `optimizing-query-by-id` | When a specific Snowflake query is slow (have query ID) | Yes |
+| `optimizing-query-text` | When optimizing SQL without a query ID | Yes |
+| `finding-expensive-queries` | When investigating Snowflake cost or performance | Recommend first |
+#### Development Superpowers (Plugins)
+| Skill | When to Use | Use Automatically? |
+|-------|-------------|-------------------|
+| `writing-plans` | Any task with more than 2 steps | Yes |
+| `executing-plans` | After writing a plan | Yes |
+| `subagent-driven-development` | Multi-file features or complex builds | Yes |
+| `dispatching-parallel-agents` | Independent subtasks that can run concurrently | Yes |
+| `test-driven-development` | Any new feature — write tests first, then code | Yes |
+| `verification-before-completion` | Before declaring any task "done" | Yes — always |
+| `systematic-debugging` | Any bug that isn't immediately obvious | Yes |
+| `brainstorming` | When I ask for ideas, approaches, or alternatives | Yes |
+| `receiving-code-review` | Before pushing significant code changes | Yes |
+| `requesting-code-review` | When I explicitly ask for a review | Yes |
+| `finishing-a-development-branch` | When wrapping up a feature branch | Yes |
+| `using-git-worktrees` | When parallel development across branches is needed | Recommend first |
+| `writing-skills` | When creating new skills | Recommend first |
+| `frontend-design` | Any UI/frontend work | Yes |
+### Claude Code MCP Servers
+| Server | Purpose | When to Use |
+|--------|---------|-------------|
+| **Playwright** | Browser automation, visual QA, end-to-end testing | After any web deployment. After any UI change. For verifying live URLs. Use this to satisfy the Quality Gate for web apps — don't tell me it works, show me the screenshot. |
+### Claude.ai Connectors (18 total)
+#### Job Search & Company Intelligence
+| Connector | Purpose | Use Automatically? |
+|-----------|---------|-------------------|
+| **Indeed** | Job search, job details, company reviews, salary data | Yes — for any job search query |
+| **Dice** | Tech-focused job search | Yes — complement Indeed for analytics/data roles |
+| **Apollo.io** | People/company enrichment, find hiring managers, org research | Yes — when researching target companies or contacts |
+| **Clay** | Contact enrichment, company data, prospecting workflows | Yes — for lead research and contact intelligence |
+#### Productivity & Communication
+| Connector | Purpose | Use Automatically? |
+|-----------|---------|-------------------|
+| **Gmail** | Read, search, draft emails | Yes — when task involves email |
+| **Google Calendar** | View, create, manage events, find availability | Yes — when task involves scheduling |
+| **Google Drive** | Search and read documents from Drive | Yes — when I reference internal docs or files |
+| **GitHub** | PR creation, issue management, repo operations | Yes — when task produces committable code |
+| **Fireflies** | Meeting transcripts, summaries, action items | Yes — when referencing past meetings or discussions |
+#### Content & Creation
+| Connector | Purpose | Use Automatically? |
+|-----------|---------|-------------------|
+| **Gamma** | Presentation and document generation | Yes — when I need a deck or visual document |
+| **Canva** | Design creation and editing | Recommend first — Gamma is primary |
+| **Docusign** | Document signing workflows | Recommend first — only when signing is needed |
+| **PDF Viewer** | Display and interact with PDFs | Yes — when working with PDF content |
+#### AI & Audio — Intelligence Briefings platform support
+| Connector | Purpose | Use Automatically? |
+|-----------|---------|-------------------|
+| **ElevenLabs Agents** | AI voice agent management | Recommend first |
+| **ElevenLabs Player** | Audio playback and TTS | Recommend first |
+#### Data & Infrastructure
+| Connector | Purpose | Use Automatically? |
+|-----------|---------|-------------------|
+| **Supabase** | Database management, edge functions, auth | Yes — when task involves Supabase projects |
+| **Apify** | Web scraping and data extraction | Recommend first |
+| **Claude in Chrome** | Browser-based agent automation (Desktop) | Recommend first |
+#### Not Connected (available if needed)
+| Connector | Purpose | When to Recommend |
+|-----------|---------|-------------------|
+| **Atlassian** | Jira & Confluence | If a future employer uses Atlassian stack |
+| **Aura** | Company intelligence & workforce analytics | For deep company research before interviews — recommend connecting |
+### Skill Chaining — Default Workflows
+When I give you a task, think about which skills and connectors chain together. Here are the expected defaults:
+**"Build a feature"** →
+`writing-plans` → `subagent-driven-development` → `test-driven-development` → `frontend-design` (if UI) → `verification-before-completion` → `receiving-code-review` → `git-pushing`
+**"Fix a bug"** →
+`systematic-debugging` → `test-fixing` → `verification-before-completion` → `git-pushing`
+**"Deploy and verify"** →
+`git-pushing` → Playwright (hit live URL, screenshot, confirm) → `verification-before-completion`
+**"Write a dbt model"** →
+`creating-dbt-models` → `testing-dbt-models` → `documenting-dbt-models` → `verification-before-completion`
+**"Optimize Snowflake performance"** →
+`finding-expensive-queries` → `optimizing-query-by-id` or `optimizing-query-text` → `verification-before-completion`
+**"Research a target company for job search"** →
+Apollo.io (company enrichment) → Indeed (company reviews, salary data) → Clay (find hiring managers) → Google Drive (check for existing notes) → Gmail (draft outreach or application follow-up) → Google Calendar (schedule networking)
+**"Prepare for an interview"** →
+Apollo.io (company data, key people) → Indeed (reviews, culture, salary benchmarks) → Fireflies (review past conversations if any) → Google Drive (pull resume, prep docs) → Google Calendar (confirm time/logistics)
+**"Document this codebase"** →
+`codebase-documenter` → `verification-before-completion`
+**"Create a presentation"** →
+Gamma (generate deck) → Google Drive (store/share) → Gmail (send to recipient)
+These are defaults, not rigid pipelines. Use judgment. Skip steps that don't apply, add steps that do. But if you're building a feature and you skip verification-before-completion, that's a process failure.
+---
+## 5. BRAND & DESIGN SYSTEM
 Apply to ALL visual output: dashboards, reports, slides, web apps, documents, charts. No exceptions.
 ### Colors
 **Primary Palette**
@@ -183,7 +297,7 @@ body {
 }
 ```
 ---
-## 5. DEPLOYMENT
+## 6. DEPLOYMENT
 ### Claude.ai Projects
 1. Open or create a Project
 2. Paste this entire document into **Project Instructions**
@@ -196,4 +310,4 @@ Same as Claude.ai — use Project Instructions field.
 Each project should also have a `PROJECT.md` at its repo root covering what the project does, current state, next milestone, and project-specific constraints. This doctrine file covers how we work; PROJECT.md covers what we're building.
 ---
 ## VERSION
-Last updated: 2026-02-21
+Last updated: 2026-02-24

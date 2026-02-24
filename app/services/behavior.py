@@ -444,7 +444,7 @@ def detect_endgame_avoidance(db: Session) -> dict:
     games_reaching_endgame = []
 
     for game_id in analyzed_ids:
-        game = db.query(Game).get(game_id)
+        game = db.get(Game, game_id)
         if not game:
             continue
         last_move = db.query(MoveAnalysis).filter(

@@ -23,9 +23,7 @@ class Settings(BaseSettings):
     threshold_inaccuracy: int = 100
     threshold_mistake: int = 200
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 settings = Settings()
