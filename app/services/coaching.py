@@ -29,6 +29,17 @@ def _get_client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 
+def _truncate_pgn(pgn: str, max_chars: int = 3000) -> str:
+    """Truncate PGN at a move boundary to avoid cutting mid-move."""
+    if len(pgn) <= max_chars:
+        return pgn
+    # Find the last space before the limit to break at a move boundary
+    cut = pgn.rfind(" ", 0, max_chars)
+    if cut == -1:
+        cut = max_chars
+    return pgn[:cut]
+
+
 def explain_move(db: Session, game: Game, ply: int) -> dict:
     """Generate Claude coaching explanation for a single move."""
     analysis = db.query(MoveAnalysis).filter(
@@ -144,7 +155,7 @@ def review_game(db: Session, game: Game) -> dict:
 
     prompt = f"""You are a chess coach reviewing a complete game for an intermediate player (800-1200 rated).
 
-GAME PGN: {game.pgn[:3000]}
+GAME PGN: {_truncate_pgn(game.pgn, 3000)}
 OPENING: {game.opening_name or 'Unknown'} ({game.eco or '?'})
 RESULT: {game.result.value} ({game.result_type})
 PLAYER COLOR: {game.player_color.value}

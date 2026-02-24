@@ -89,6 +89,8 @@ def analyze_game(db: Session, game: Game, depth: int | None = None) -> dict:
     Returns dict with analysis stats.
     """
     depth = depth or settings.stockfish_depth
+    # Safety timeout: 30 seconds per move position prevents engine hangs
+    move_limit = chess.engine.Limit(depth=depth, time=30.0)
 
     try:
         pgn_game = chess.pgn.read_game(io.StringIO(game.pgn))
@@ -136,18 +138,18 @@ def analyze_game(db: Session, game: Game, depth: int | None = None) -> dict:
             game_phase = detect_game_phase(board, ply)
 
             # Get engine evaluation of current position
-            info_before = engine.analyse(board, chess.engine.Limit(depth=depth))
+            info_before = engine.analyse(board, move_limit)
             eval_before_white = eval_to_cp(info_before, True)
 
             # Get the best move
-            best_move_result = engine.play(board, chess.engine.Limit(depth=depth))
+            best_move_result = engine.play(board, move_limit)
             best_move = best_move_result.move
 
             best_move_san = board.san(best_move) if best_move else None
             best_move_uci = best_move.uci() if best_move else None
 
             # Get top 3 lines
-            multi_info = engine.analyse(board, chess.engine.Limit(depth=depth), multipv=3)
+            multi_info = engine.analyse(board, move_limit, multipv=3)
             top_3 = []
             if isinstance(multi_info, list):
                 for line_info in multi_info:
@@ -169,7 +171,7 @@ def analyze_game(db: Session, game: Game, depth: int | None = None) -> dict:
 
             # Make the move and evaluate the resulting position
             board.push(move)
-            info_after = engine.analyse(board, chess.engine.Limit(depth=depth))
+            info_after = engine.analyse(board, move_limit)
             eval_after_white = eval_to_cp(info_after, True)
 
             # Calculate eval delta from player's perspective

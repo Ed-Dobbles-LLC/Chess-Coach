@@ -70,7 +70,7 @@ def dashboard_summary(db: Session = Depends(get_db)):
     time_class_stats = db.query(
         Game.time_class,
         func.count(Game.id),
-        func.avg(case((Game.result == "win", 1.0), else_=0.0)),
+        func.avg(case((Game.result == GameResult.win, 1.0), else_=0.0)),
     ).group_by(Game.time_class).all()
 
     result = {
@@ -101,9 +101,9 @@ def opening_stats(db: Session = Depends(get_db)):
         Game.opening_name,
         Game.eco,
         func.count(Game.id).label("games"),
-        func.avg(case((Game.result == "win", 1.0), else_=0.0)).label("win_rate"),
+        func.avg(case((Game.result == GameResult.win, 1.0), else_=0.0)).label("win_rate"),
         func.avg(case(
-            (Game.player_color == "white", 1.0),
+            (Game.player_color == PlayerColor.white, 1.0),
             else_=0.0
         )).label("pct_white"),
     ).filter(
@@ -187,7 +187,7 @@ def time_analysis(db: Session = Depends(get_db)):
     hourly = db.query(
         extract("hour", Game.end_time).label("hour"),
         func.count(Game.id),
-        func.avg(case((Game.result == "win", 1.0), else_=0.0)),
+        func.avg(case((Game.result == GameResult.win, 1.0), else_=0.0)),
     ).filter(
         Game.time_class == "blitz",
     ).group_by("hour").order_by("hour").all()
@@ -196,7 +196,7 @@ def time_analysis(db: Session = Depends(get_db)):
     daily = db.query(
         extract("dow", Game.end_time).label("dow"),
         func.count(Game.id),
-        func.avg(case((Game.result == "win", 1.0), else_=0.0)),
+        func.avg(case((Game.result == GameResult.win, 1.0), else_=0.0)),
     ).filter(
         Game.time_class == "blitz",
     ).group_by("dow").order_by("dow").all()

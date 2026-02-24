@@ -755,3 +755,89 @@ class TestAPIEdgeCases:
         data = resp.json()
         record = data["record"]
         assert record["wins"] + record["losses"] + record["draws"] == data["total_games"]
+
+    def test_games_list_has_analysis_field(self, client):
+        """Verify has_analysis is computed correctly (batch, not N+1)."""
+        # Fetch all 50 games to ensure we get both analyzed and unanalyzed
+        resp = client.get("/api/games?per_page=50")
+        assert resp.status_code == 200
+        games = resp.json()["games"]
+        analyzed_count = sum(1 for g in games if g["has_analysis"])
+        unanalyzed_count = sum(1 for g in games if not g["has_analysis"])
+        assert analyzed_count == 10  # 10 analyzed games in seed
+        assert unanalyzed_count == 40
+
+    def test_games_list_analyzed_filter_consistency(self, client):
+        """Verify analyzed=true returns correct count."""
+        resp = client.get("/api/games?analyzed=true")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 10  # 10 analyzed games in seed
+
+    def test_dashboard_time_class_uses_enum(self, client):
+        """Verify time class stats use proper enum comparison."""
+        from app.routers.dashboard import _cache
+        _cache.clear()
+
+        resp = client.get("/api/dashboard/summary")
+        data = resp.json()
+        # Should have by_time_class data since seed has blitz games
+        assert len(data["by_time_class"]) > 0
+        for tc in data["by_time_class"]:
+            assert "win_rate" in tc
+            assert tc["win_rate"] >= 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PGN TRUNCATION — safe truncation at move boundary
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestPGNTruncation:
+    """Test safe PGN truncation at move boundaries."""
+
+    def test_truncate_short_pgn(self):
+        from app.services.coaching import _truncate_pgn
+        pgn = "1. e4 e5 2. Nf3 Nc6 1-0"
+        assert _truncate_pgn(pgn, 3000) == pgn
+
+    def test_truncate_at_space(self):
+        from app.services.coaching import _truncate_pgn
+        pgn = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 1-0"
+        result = _truncate_pgn(pgn, 20)
+        # Should cut at a space boundary before char 20
+        assert len(result) <= 20
+        assert not result.endswith(".")  # Didn't cut mid-move
+        assert " " not in result[len(result)-1:]  # Ends cleanly
+
+    def test_truncate_preserves_complete_moves(self):
+        from app.services.coaching import _truncate_pgn
+        pgn = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 d6 1-0"
+        result = _truncate_pgn(pgn, 25)
+        # Should be a clean cut at a move boundary
+        assert result.count(".") >= 1  # At least one move number
+
+    def test_truncate_empty_pgn(self):
+        from app.services.coaching import _truncate_pgn
+        assert _truncate_pgn("", 3000) == ""
+
+    def test_truncate_exact_length(self):
+        from app.services.coaching import _truncate_pgn
+        pgn = "1. e4 e5"
+        assert _truncate_pgn(pgn, 8) == pgn
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STOCKFISH — engine timeout protection
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestStockfishTimeout:
+    """Verify engine timeout is set in analysis."""
+
+    def test_move_limit_has_time(self):
+        """Verify the analyze_game function sets a time limit."""
+        import chess.engine
+        from app.services.stockfish import analyze_game
+        import inspect
+        source = inspect.getsource(analyze_game)
+        assert "time=30.0" in source
+        assert "move_limit" in source

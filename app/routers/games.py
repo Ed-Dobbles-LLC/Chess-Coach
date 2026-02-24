@@ -42,6 +42,16 @@ def list_games(
         (page - 1) * per_page
     ).limit(per_page).all()
 
+    # Batch-fetch analyzed game IDs to avoid N+1 queries
+    game_ids = [g.id for g in games]
+    analyzed_game_ids = set()
+    if game_ids:
+        analyzed_game_ids = {
+            row[0] for row in db.query(GameSummary.game_id).filter(
+                GameSummary.game_id.in_(game_ids)
+            ).all()
+        }
+
     return {
         "total": total,
         "page": page,
@@ -61,9 +71,7 @@ def list_games(
                 "opponent_rating": g.opponent_rating,
                 "total_moves": g.total_moves,
                 "end_time": g.end_time.isoformat() if g.end_time else None,
-                "has_analysis": db.query(GameSummary).filter(
-                    GameSummary.game_id == g.id
-                ).first() is not None,
+                "has_analysis": g.id in analyzed_game_ids,
             }
             for g in games
         ],
