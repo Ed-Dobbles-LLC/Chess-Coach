@@ -14,9 +14,12 @@ Personalized chess coaching platform for eddobbles2021 on Chess.com. Ingests ful
 - Chess.com PubAPI sync (incremental, all 57 monthly archives)
 - Stockfish 16 analysis at depth 18 (move classification, game phase detection, critical moments, top-3 lines)
 - Claude coaching: single move explanations (Sonnet), full game reviews (Sonnet), pattern diagnosis (Opus)
+- Game walkthrough with inflection-point commentary
+- Behavioral pattern mining (8 cross-game detectors)
+- Playing session detection with tilt/fatigue analysis
 - Drill trainer with SM-2 spaced repetition
-- Frontend SPA: Dashboard, Game History, Game Review (board + move list + coaching panel), Patterns, Drills
-- 18 API endpoints across 5 routers
+- Frontend SPA: Dashboard, Games, Review, Patterns, Drills, Sessions, Opening Book (7 views)
+- 23 API endpoints across 5 routers
 
 **Phase completion:**
 - Phase 1 (Foundation): DONE
@@ -26,6 +29,16 @@ Personalized chess coaching platform for eddobbles2021 on Chess.com. Ingests ful
 - Phase 5 (Pattern Analytics): DONE
 - Phase 6 (Drill Trainer): DONE
 - Phase 7 (Backfill & Polish): DONE
+- Phase 8 (Behavioral & Session Analytics): DONE
+
+## WHAT WAS ADDED IN PHASE 8
+
+1. **Behavioral pattern mining** (`app/services/behavior.py`) — 8 cross-game detectors: early queen trades, piece retreats under pressure, same-piece-twice in opening, pawn storms on castled king, endgame avoidance, losing streak behavior, time trouble correlation, first-move syndrome. Each returns frequency, impact, severity, example games.
+2. **Game walkthrough** — `POST /api/coach/walkthrough/{id}` endpoint with inflection-point commentary. Frontend guided step-through with autoplay.
+3. **Session detection & tilt analysis** (`app/services/sessions.py`) — Groups consecutive blitz games (gap < 60 min) into sessions. Computes tilt metrics: CPL after loss vs win, win rate after 2+ consecutive losses, optimal stop point (crossover game where cumulative delta goes negative).
+4. **PlaySession model** — New `play_sessions` table storing per-session stats: rating delta, W/L/D counts, CPL first-half vs second-half, longest loss streak.
+5. **Sessions frontend tab** — Performance by session length chart (canvas), tilt indicator card, session history table with sparklines, clickable drill-down to game-by-game detail.
+6. **Behavioral analysis endpoint** — `POST /api/coach/behavioral-analysis` runs all 8 detectors + Claude narrative synthesis.
 
 ## WHAT WAS ADDED IN PHASE 7
 
@@ -42,25 +55,29 @@ app/
   config.py          — Settings from env vars / .env
   database.py        — SQLAlchemy engine (SQLite or Postgres auto-detect)
   models/
-    models.py        — 5 tables: games, move_analysis, game_summaries, coaching_sessions, drill_positions
+    models.py        — 6 tables: games, move_analysis, game_summaries, coaching_sessions, drill_positions, play_sessions
   routers/
     games.py         — GET /api/games, GET /api/games/{id}, POST /api/games/sync
     analysis.py      — POST /api/analysis/batch, GET /api/analysis/status, GET /api/analysis/game/{id}
-    coaching.py      — POST /api/coach/game-review/{id}, POST /api/coach/move-explain, POST /api/coach/diagnose, GET /api/coach/sessions
+    coaching.py      — POST /api/coach/game-review/{id}, POST /api/coach/move-explain, POST /api/coach/diagnose,
+                       POST /api/coach/walkthrough/{id}, POST /api/coach/behavioral-analysis, GET /api/coach/sessions
     drills.py        — GET /api/drills, POST /api/drills/{id}/attempt, GET /api/drills/stats, POST /api/drills/extract
-    dashboard.py     — GET /api/dashboard/summary, /openings, /patterns, /time-analysis, /opening-book/{eco}
+    dashboard.py     — GET /api/dashboard/summary, /openings, /patterns, /time-analysis, /opening-book/{eco},
+                       /sessions, /sessions/{date}
   services/
     chess_com.py     — Chess.com PubAPI ingestion (single-threaded, 1 req/sec)
     stockfish.py     — Engine analysis pipeline (depth 18 batch, depth 22 deep)
-    coaching.py      — Claude prompt templates and API calls
+    coaching.py      — Claude prompt templates and API calls (move explain, game review, walkthrough, behavioral)
     drills.py        — Spaced repetition logic and drill extraction
     tactics.py       — Tactical theme detection (forks, pins, skewers, etc.)
+    sessions.py      — Playing session detection, tilt analysis, optimal stop point
+    behavior.py      — 8 cross-game behavioral pattern detectors
 static/
-  index.html         — SPA shell with 6 views (Dashboard, Games, Review, Patterns, Drills, Opening Book)
+  index.html         — SPA shell with 7 views (Dashboard, Games, Review, Patterns, Drills, Sessions, Opening Book)
   css/style.css      — Dobbles.AI design system
   js/app.js          — Client-side application (board renderer, charts, navigation)
 main.py              — FastAPI app entry point, mounts routers and static files
-cli.py               — CLI batch operations (sync, analyze, extract-drills, tag-themes, status)
+cli.py               — CLI batch operations (sync, analyze, extract-drills, tag-themes, build-sessions, status)
 ```
 
 ## KEY DECISIONS
@@ -92,6 +109,7 @@ python cli.py analyze --limit 200     # Batch Stockfish analysis with progress/E
 python cli.py extract-drills          # Extract drill positions from analyzed games
 python cli.py tag-themes              # Tag tactical themes on untagged drills
 python cli.py tag-themes --force      # Re-tag all drills
+python cli.py build-sessions          # Build PlaySession records from game history
 python cli.py status                  # Show database status
 
 # API equivalents
@@ -99,6 +117,8 @@ curl -X POST http://localhost:8000/api/games/sync
 curl -X POST http://localhost:8000/api/analysis/batch -H "Content-Type: application/json" -d '{"limit": 200}'
 curl -X POST http://localhost:8000/api/coach/game-review/5093
 curl -X POST http://localhost:8000/api/drills/extract
+curl http://localhost:8000/api/dashboard/sessions
+curl -X POST http://localhost:8000/api/coach/behavioral-analysis
 ```
 
 ## ENV VARS
