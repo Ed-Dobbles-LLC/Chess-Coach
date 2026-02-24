@@ -777,7 +777,7 @@ function renderBoard(moves, ply, playerColor) {
     const files = playerColor === 'black' ? 'hgfedcba' : 'abcdefgh';
     const ranks = playerColor === 'black' ? '12345678' : '87654321';
 
-    let html = '<div style="display:grid;grid-template-columns:repeat(8,1fr);width:100%;height:100%;font-size:0;">';
+    let html = '<div style="display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);width:100%;height:100%;font-size:0;">';
     for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
             const isLight = (r + c) % 2 === 0;
@@ -1072,7 +1072,9 @@ function renderDrillBoard(fen, playerColor) {
     const files = playerColor === 'black' ? 'hgfedcba' : 'abcdefgh';
     const ranks = playerColor === 'black' ? '12345678' : '87654321';
 
-    let html = '<div style="display:grid;grid-template-columns:repeat(8,1fr);width:100%;height:100%;font-size:0;">';
+    const toMove = fen.split(' ')[1] === 'b' ? 'Black' : 'White';
+
+    let html = '<div style="display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);width:100%;height:100%;font-size:0;">';
     for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
             const isLight = (r + c) % 2 === 0;
@@ -1089,6 +1091,9 @@ function renderDrillBoard(fen, playerColor) {
     }
     html += '</div>';
     container.innerHTML = html;
+
+    const turnIcon = toMove === 'White' ? '&#9812;' : '&#9818;';
+    document.getElementById('drill-prompt').innerHTML = `<span class="turn-indicator">${turnIcon} ${toMove} to move</span> — Find the best move!`;
 }
 
 async function submitDrill() {

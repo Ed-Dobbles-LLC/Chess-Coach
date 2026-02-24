@@ -453,6 +453,8 @@ tbody tr:active td { background: rgba(255, 255, 255, 0.05); }
     position: relative;
     transition: filter var(--transition-fast);
     user-select: none;
+    overflow: hidden;
+    min-height: 0;
 }
 .board-square-light { background: #e8dab3; }
 .board-square-dark { background: #b08968; }
@@ -716,6 +718,10 @@ tbody tr:active td { background: rgba(255, 255, 255, 0.05); }
     color: var(--color-sky);
     margin-bottom: 16px;
     letter-spacing: -0.01em;
+}
+.turn-indicator {
+    color: var(--color-text);
+    font-weight: 600;
 }
 .drill-input {
     display: flex;
