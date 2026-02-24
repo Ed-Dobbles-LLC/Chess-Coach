@@ -7,6 +7,7 @@ we provide Stockfish output and ask Claude to EXPLAIN.
 import io
 import logging
 import re
+import time
 from typing import Optional
 
 import chess.pgn
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models.models import (
     Game, MoveAnalysis, GameSummary, CoachingSession, SessionType,
-    MoveClassification, PlayerColor, GamePhase
+    MoveClassification, PlayerColor, GamePhase, GameResult, TimeClass
 )
 from app.config import settings
 
@@ -25,8 +26,14 @@ SONNET_MODEL = "claude-sonnet-4-20250514"
 OPUS_MODEL = "claude-opus-4-20250514"
 
 
+_client: anthropic.Anthropic | None = None
+
+
 def _get_client() -> anthropic.Anthropic:
-    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    global _client
+    if _client is None:
+        _client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    return _client
 
 
 def _truncate_pgn(pgn: str, max_chars: int = 3000) -> str:
@@ -38,6 +45,33 @@ def _truncate_pgn(pgn: str, max_chars: int = 3000) -> str:
     if cut == -1:
         cut = max_chars
     return pgn[:cut]
+
+
+def _call_claude(model: str, prompt: str, max_tokens: int = 1000, retries: int = 3) -> str:
+    """Call Claude API with retry logic for transient failures."""
+    client = _get_client()
+    for attempt in range(retries):
+        try:
+            response = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return response.content[0].text
+        except anthropic.APITimeoutError:
+            if attempt < retries - 1:
+                wait = 2 ** (attempt + 1)
+                logger.warning(f"Claude API timeout, retrying in {wait}s (attempt {attempt + 1}/{retries})")
+                time.sleep(wait)
+            else:
+                raise
+        except anthropic.RateLimitError:
+            if attempt < retries - 1:
+                wait = 2 ** (attempt + 1)
+                logger.warning(f"Claude API rate limited, retrying in {wait}s (attempt {attempt + 1}/{retries})")
+                time.sleep(wait)
+            else:
+                raise
 
 
 def explain_move(db: Session, game: Game, ply: int) -> dict:
@@ -97,14 +131,7 @@ Explain:
 
 Be conversational, direct, and concrete. Reference specific squares and pieces. No generic advice. Teach the WHY, not just the WHAT."""
 
-    client = _get_client()
-    response = client.messages.create(
-        model=SONNET_MODEL,
-        max_tokens=800,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    coaching_text = response.content[0].text
+    coaching_text = _call_claude(SONNET_MODEL, prompt, max_tokens=800)
 
     session = CoachingSession(
         game_id=game.id,
@@ -179,14 +206,7 @@ Provide a coaching review structured as:
 
 Keep it under 500 words. Direct, no fluff. This player is an executive — respect their time."""
 
-    client = _get_client()
-    response = client.messages.create(
-        model=SONNET_MODEL,
-        max_tokens=1000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    coaching_text = response.content[0].text
+    coaching_text = _call_claude(SONNET_MODEL, prompt, max_tokens=1000)
 
     # Store in coaching_sessions
     session = CoachingSession(
@@ -224,10 +244,10 @@ def generate_pattern_diagnosis(db: Session) -> dict:
     opening_stats = db.query(
         Game.opening_name,
         func.count(Game.id).label("games_played"),
-        func.avg(case((Game.result == "win", 1), else_=0)).label("win_rate"),
+        func.avg(case((Game.result == GameResult.win, 1), else_=0)).label("win_rate"),
     ).filter(
         Game.opening_name.isnot(None),
-        Game.time_class == "blitz",
+        Game.time_class == TimeClass.blitz,
     ).group_by(Game.opening_name).having(
         func.count(Game.id) >= 5
     ).order_by(func.count(Game.id).desc()).limit(15).all()
@@ -246,11 +266,11 @@ def generate_pattern_diagnosis(db: Session) -> dict:
 
     # Color performance
     color_stats = {}
-    for color in ["white", "black"]:
-        games = db.query(Game).filter(Game.player_color == color, Game.time_class == "blitz")
+    for color in [PlayerColor.white, PlayerColor.black]:
+        games = db.query(Game).filter(Game.player_color == color, Game.time_class == TimeClass.blitz)
         total = games.count()
-        wins = games.filter(Game.result == "win").count()
-        color_stats[color] = {
+        wins = games.filter(Game.result == GameResult.win).count()
+        color_stats[color.value] = {
             "total": total,
             "win_rate": round(wins / total * 100, 1) if total > 0 else 0,
         }
@@ -282,14 +302,7 @@ Provide:
 
 Be data-driven. Reference the actual numbers. No generic advice."""
 
-    client = _get_client()
-    response = client.messages.create(
-        model=OPUS_MODEL,
-        max_tokens=2000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    diagnosis_text = response.content[0].text
+    diagnosis_text = _call_claude(OPUS_MODEL, prompt, max_tokens=2000)
 
     session = CoachingSession(
         game_id=None,
@@ -455,14 +468,7 @@ Respond in EXACTLY this format — one section per moment, using XML tags:
 [2-3 sentence story arc of the entire game: how it opened, where it turned, how it ended]
 </narrative>"""
 
-    client = _get_client()
-    response = client.messages.create(
-        model=SONNET_MODEL,
-        max_tokens=2000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    raw_response = response.content[0].text
+    raw_response = _call_claude(SONNET_MODEL, prompt, max_tokens=2000)
 
     # Parse the response
     commentary_points = []
@@ -586,14 +592,7 @@ Provide a narrative behavioral diagnosis:
 
 Be direct. Reference the actual numbers. This player is an executive — no fluff, no generic advice. Write as if you're sitting across the table from them with a laptop open to their game history."""
 
-    client = _get_client()
-    response = client.messages.create(
-        model=OPUS_MODEL,
-        max_tokens=2000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    narrative_text = response.content[0].text
+    narrative_text = _call_claude(OPUS_MODEL, prompt, max_tokens=2000)
 
     # Store in coaching_sessions
     session = CoachingSession(

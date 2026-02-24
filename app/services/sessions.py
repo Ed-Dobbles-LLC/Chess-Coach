@@ -11,7 +11,7 @@ from datetime import timedelta
 from sqlalchemy.orm import Session as DBSession
 
 from app.models.models import (
-    Game, GameSummary, PlaySession, SessionResult, GameResult,
+    Game, GameSummary, PlaySession, SessionResult, GameResult, TimeClass,
 )
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ SESSION_GAP_SECONDS = 3600  # 60 minutes
 def detect_sessions(db: DBSession) -> list[list[Game]]:
     """Walk through all blitz games ordered by end_time and group into sessions."""
     games = db.query(Game).filter(
-        Game.time_class == "blitz",
+        Game.time_class == TimeClass.blitz,
         Game.end_time.isnot(None),
     ).order_by(Game.end_time).all()
 
@@ -129,8 +129,21 @@ def _build_session_record(games: list[Game], summary_map: dict) -> PlaySession:
         else:
             result = SessionResult.breakeven
 
+    # Approximate session start: first game's end_time minus estimated game duration.
+    # For 5|5 blitz, average game is ~6 minutes. Use total_moves as proxy if available.
+    first_game = games[0]
+    try:
+        if first_game.end_time and first_game.total_moves and isinstance(first_game.total_moves, (int, float)):
+            # ~10 seconds per move pair is a reasonable blitz estimate
+            estimated_duration = timedelta(seconds=int(first_game.total_moves) * 10)
+            session_start = first_game.end_time - estimated_duration
+        else:
+            session_start = first_game.end_time
+    except (TypeError, ValueError):
+        session_start = first_game.end_time
+
     return PlaySession(
-        start_time=games[0].end_time,
+        start_time=session_start,
         end_time=games[-1].end_time,
         game_count=len(games),
         game_ids=[g.id for g in games],
@@ -195,7 +208,7 @@ def get_sessions_summary(db: DBSession) -> dict:
 
     # Tilt detection — game-level analysis from all sessions
     games = db.query(Game).filter(
-        Game.time_class == "blitz",
+        Game.time_class == TimeClass.blitz,
         Game.end_time.isnot(None),
     ).order_by(Game.end_time).all()
 

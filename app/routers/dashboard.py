@@ -8,7 +8,7 @@ from sqlalchemy import func, case, extract
 import chess.pgn
 
 from app.database import get_db
-from app.models.models import Game, GameSummary, MoveAnalysis, GameResult, PlayerColor, DrillPosition
+from app.models.models import Game, GameSummary, MoveAnalysis, GameResult, PlayerColor, DrillPosition, TimeClass
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -49,7 +49,7 @@ def dashboard_summary(db: Session = Depends(get_db)):
     recent_games = db.query(
         Game.end_time, Game.player_rating, Game.result
     ).filter(
-        Game.time_class == "blitz",
+        Game.time_class == TimeClass.blitz,
         Game.end_time >= ninety_days_ago,
     ).order_by(Game.end_time).all()
 
@@ -189,7 +189,7 @@ def time_analysis(db: Session = Depends(get_db)):
         func.count(Game.id),
         func.avg(case((Game.result == GameResult.win, 1.0), else_=0.0)),
     ).filter(
-        Game.time_class == "blitz",
+        Game.time_class == TimeClass.blitz,
     ).group_by("hour").order_by("hour").all()
 
     # Day of week (0=Sunday in extract, but varies by DB)
@@ -198,7 +198,7 @@ def time_analysis(db: Session = Depends(get_db)):
         func.count(Game.id),
         func.avg(case((Game.result == GameResult.win, 1.0), else_=0.0)),
     ).filter(
-        Game.time_class == "blitz",
+        Game.time_class == TimeClass.blitz,
     ).group_by("dow").order_by("dow").all()
 
     day_names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]

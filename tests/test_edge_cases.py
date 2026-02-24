@@ -841,3 +841,214 @@ class TestStockfishTimeout:
         source = inspect.getsource(analyze_game)
         assert "time=30.0" in source
         assert "move_limit" in source
+
+    def test_per_move_error_handling(self):
+        """Verify per-move try/except is present so one bad position doesn't crash batch."""
+        from app.services.stockfish import analyze_game
+        import inspect
+        source = inspect.getsource(analyze_game)
+        assert "EngineTerminatedError" in source
+        assert "move_pushed" in source
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# COACHING — singleton client and retry logic
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestCoachingClientAndRetry:
+    """Test coaching service improvements."""
+
+    def test_singleton_client(self):
+        """_get_client returns the same instance on repeated calls."""
+        from app.services.coaching import _get_client, _client
+        import app.services.coaching as coaching_mod
+        # Reset to test singleton behavior
+        coaching_mod._client = None
+
+        with patch("app.services.coaching.anthropic.Anthropic") as mock_cls:
+            mock_instance = MagicMock()
+            mock_cls.return_value = mock_instance
+            c1 = _get_client()
+            c2 = _get_client()
+            assert c1 is c2
+            mock_cls.assert_called_once()
+
+        # Clean up
+        coaching_mod._client = None
+
+    def test_call_claude_function_exists(self):
+        """_call_claude helper exists and has retry logic."""
+        from app.services.coaching import _call_claude
+        import inspect
+        source = inspect.getsource(_call_claude)
+        assert "retries" in source
+        assert "APITimeoutError" in source
+        assert "RateLimitError" in source
+
+    def test_call_claude_success(self):
+        """_call_claude returns text on success."""
+        from app.services.coaching import _call_claude
+        import app.services.coaching as coaching_mod
+        coaching_mod._client = None
+
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text="Test coaching response")]
+
+        with patch("app.services.coaching.anthropic.Anthropic") as mock_cls:
+            mock_instance = MagicMock()
+            mock_instance.messages.create.return_value = mock_response
+            mock_cls.return_value = mock_instance
+
+            result = _call_claude("claude-sonnet-4-20250514", "test prompt", max_tokens=100)
+            assert result == "Test coaching response"
+
+        coaching_mod._client = None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SESSIONS — start_time estimation
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestSessionStartTime:
+    """Test session start_time is estimated from game duration."""
+
+    def test_session_start_time_estimated(self, db):
+        """build_play_sessions should estimate start_time before first game's end_time."""
+        from app.services.sessions import build_play_sessions
+        from app.models.models import PlaySession
+
+        # Build sessions from seed data
+        build_play_sessions(db)
+        sessions = db.query(PlaySession).all()
+
+        for session in sessions:
+            if session.start_time and session.end_time:
+                # start_time should be <= end_time
+                assert session.start_time <= session.end_time
+
+    def test_session_start_before_end_time_of_first_game(self, db):
+        """For multi-game sessions, start_time should be before end_time."""
+        from app.services.sessions import _build_session_record
+        from app.models.models import Game, GameResult, PlayerColor, TimeClass
+        from datetime import datetime, timezone
+
+        game = Game(
+            chess_com_id="test_start_123",
+            pgn="1. e4 e5 1-0",
+            white_username="a", black_username="b",
+            player_color=PlayerColor.white,
+            result=GameResult.win,
+            result_type="resign",
+            time_control="300",
+            time_class=TimeClass.blitz,
+            end_time=datetime(2025, 6, 15, 12, 0, 0, tzinfo=timezone.utc),
+            total_moves=20,
+        )
+        db.add(game)
+        db.flush()
+
+        ps = _build_session_record([game], {})
+        # With 20 total_moves * 10 seconds = 200 seconds before end_time
+        assert ps.start_time < game.end_time
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SM-2 — accuracy-gated scheduling
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestSM2AccuracyGating:
+    """Test that SM-2 intervals respect accuracy thresholds."""
+
+    def test_low_accuracy_stays_short_interval(self, db):
+        """A drill with low accuracy should not advance to long intervals."""
+        from app.services.drills import submit_drill_attempt, INTERVALS
+        from app.models.models import DrillPosition, GamePhase
+
+        drill = DrillPosition(
+            game_id=1,
+            ply=99,
+            fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            correct_move_san="e4",
+            player_move_san="d4",
+            eval_delta=-200.0,
+            game_phase=GamePhase.opening,
+            next_review_date=date.today(),
+            difficulty_rating=2.0,
+            times_shown=9,
+            times_correct=2,  # Low accuracy: 2/9 = 22%
+        )
+        db.add(drill)
+        db.flush()
+
+        result = submit_drill_attempt(db, drill.id, "e4")
+        assert result["correct"] is True
+        # 3 correct out of 10 = 30% accuracy -> should stay at interval 0 (1 day)
+        expected_date = str(date.today() + timedelta(days=INTERVALS[0]))
+        assert result["next_review"] == expected_date
+
+    def test_high_accuracy_advances_interval(self, db):
+        """A drill with high accuracy should advance through intervals."""
+        from app.services.drills import submit_drill_attempt, INTERVALS
+        from app.models.models import DrillPosition, GamePhase
+
+        drill = DrillPosition(
+            game_id=1,
+            ply=98,
+            fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            correct_move_san="Nf3",
+            player_move_san="Nc3",
+            eval_delta=-150.0,
+            game_phase=GamePhase.opening,
+            next_review_date=date.today(),
+            difficulty_rating=1.5,
+            times_shown=4,
+            times_correct=3,  # High accuracy: 3/4 = 75%
+        )
+        db.add(drill)
+        db.flush()
+
+        result = submit_drill_attempt(db, drill.id, "Nf3")
+        assert result["correct"] is True
+        # 4 correct out of 5 = 80%, times_correct=4 >= 3 -> mastery track
+        # interval_idx = min(4-1, 5) = 3 -> INTERVALS[3] = 14 days
+        expected_date = str(date.today() + timedelta(days=INTERVALS[3]))
+        assert result["next_review"] == expected_date
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BEHAVIOR — shared query optimization
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestBehaviorSharedQuery:
+    """Test that detect_all_patterns passes shared games list."""
+
+    def test_detect_all_patterns_uses_shared_query(self):
+        """Verify detect_all_patterns queries blitz games once."""
+        from app.services.behavior import detect_all_patterns
+        import inspect
+        source = inspect.getsource(detect_all_patterns)
+        # Should have a single blitz query at the top
+        assert "blitz_games" in source
+        assert "blitz_games=blitz_games" in source
+
+    def test_detectors_accept_blitz_games_param(self, db):
+        """Verify detectors work when passed pre-queried games."""
+        from app.services.behavior import (
+            detect_early_queen_trades,
+            detect_same_piece_twice_opening,
+            detect_pawn_storms_castled_king,
+            detect_time_trouble,
+        )
+        from app.models.models import Game, TimeClass
+
+        games = db.query(Game).filter(Game.time_class == TimeClass.blitz).all()
+
+        # Each should work without error when passed blitz_games
+        r1 = detect_early_queen_trades(db, blitz_games=games)
+        assert "pattern_name" in r1
+        r2 = detect_same_piece_twice_opening(db, blitz_games=games)
+        assert "pattern_name" in r2
+        r3 = detect_pawn_storms_castled_king(db, blitz_games=games)
+        assert "pattern_name" in r3
+        r4 = detect_time_trouble(db, blitz_games=games)
+        assert "pattern_name" in r4

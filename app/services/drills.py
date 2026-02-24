@@ -153,18 +153,18 @@ def submit_drill_attempt(db: Session, drill_id: int, move_san: str) -> dict:
 
     if is_correct:
         drill.times_correct += 1
-        # Calculate next interval based on consecutive successes
-        # Use the ratio of correct to shown as a proxy for mastery
-        if drill.times_shown > 0:
-            accuracy = drill.times_correct / drill.times_shown
-            if accuracy >= 0.8 and drill.times_correct >= 3:
-                interval_idx = min(drill.times_correct - 1, len(INTERVALS) - 1)
-            elif accuracy >= 0.5:
-                interval_idx = min(drill.times_correct - 1, 2)
-            else:
-                interval_idx = 0
+        # SM-2 inspired scheduling: use accuracy AND total correct count together.
+        # High accuracy + many correct = long interval. Low accuracy = short interval.
+        accuracy = drill.times_correct / drill.times_shown
+        if accuracy >= 0.8 and drill.times_correct >= 3:
+            # Mastery track: advance through full interval schedule
+            interval_idx = min(drill.times_correct - 1, len(INTERVALS) - 1)
+        elif accuracy >= 0.6:
+            # Partial mastery: cap at 7-day intervals
+            interval_idx = min(drill.times_correct - 1, 2)  # Max: INTERVALS[2] = 7 days
         else:
-            interval_idx = 0
+            # Low accuracy despite some correct answers: keep reviewing frequently
+            interval_idx = 0  # 1 day
         drill.next_review_date = date.today() + timedelta(days=INTERVALS[interval_idx])
     else:
         # Wrong answer: reset to review tomorrow

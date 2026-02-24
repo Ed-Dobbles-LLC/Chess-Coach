@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.models.models import (
     Game, MoveAnalysis, GameSummary, GameResult, PlayerColor,
-    MoveClassification, GamePhase,
+    MoveClassification, GamePhase, TimeClass,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,10 +58,10 @@ def _parse_pgn_moves(pgn_text: str):
 
 # ── Pattern Detectors ──
 
-def detect_early_queen_trades(db: Session) -> dict:
+def detect_early_queen_trades(db: Session, blitz_games: list[Game] | None = None) -> dict:
     """How often does the player trade queens before move 20?
     Win rate when they do vs don't?"""
-    games = db.query(Game).filter(Game.time_class == "blitz").all()
+    games = blitz_games if blitz_games is not None else db.query(Game).filter(Game.time_class == TimeClass.blitz).all()
     if not games:
         return _empty_pattern("early_queen_trades")
 
@@ -223,10 +223,10 @@ def _is_retreat_move(move: MoveAnalysis, all_moves: list, idx: int) -> bool:
         return to_rank > from_rank  # Black retreating = moving to higher rank
 
 
-def detect_same_piece_twice_opening(db: Session) -> dict:
+def detect_same_piece_twice_opening(db: Session, blitz_games: list[Game] | None = None) -> dict:
     """In ply 1-20, detect when the same piece moves more than once
     before all minor pieces are developed."""
-    games = db.query(Game).filter(Game.time_class == "blitz").all()
+    games = blitz_games if blitz_games is not None else db.query(Game).filter(Game.time_class == TimeClass.blitz).all()
     if not games:
         return _empty_pattern("same_piece_twice_opening")
 
@@ -315,9 +315,9 @@ def detect_same_piece_twice_opening(db: Session) -> dict:
     }
 
 
-def detect_pawn_storms_castled_king(db: Session) -> dict:
+def detect_pawn_storms_castled_king(db: Session, blitz_games: list[Game] | None = None) -> dict:
     """Detect pushing pawns in front of own castled king."""
-    games = db.query(Game).filter(Game.time_class == "blitz").all()
+    games = blitz_games if blitz_games is not None else db.query(Game).filter(Game.time_class == TimeClass.blitz).all()
     if not games:
         return _empty_pattern("pawn_storms_castled_king")
 
@@ -407,7 +407,7 @@ def detect_endgame_avoidance(db: Session) -> dict:
     analyzed_ids = [r[0] for r in db.query(GameSummary.game_id).all()]
     if not analyzed_ids:
         # Fallback: use total_moves as proxy (short games rarely reach endgame)
-        games = db.query(Game).filter(Game.time_class == "blitz").all()
+        games = db.query(Game).filter(Game.time_class == TimeClass.blitz).all()
         if not games:
             return _empty_pattern("endgame_avoidance")
 
@@ -488,13 +488,16 @@ def detect_endgame_avoidance(db: Session) -> dict:
     }
 
 
-def detect_losing_streak_behavior(db: Session) -> dict:
+def detect_losing_streak_behavior(db: Session, blitz_games: list[Game] | None = None) -> dict:
     """After a loss, does CPL increase? After 2+ consecutive losses, how bad?
     Group games by session (within 60 min of each other)."""
     # Get games in chronological order with summaries
-    games = db.query(Game).filter(
-        Game.time_class == "blitz",
-    ).order_by(Game.end_time).all()
+    if blitz_games is not None:
+        games = sorted(blitz_games, key=lambda g: g.end_time or g.id)
+    else:
+        games = db.query(Game).filter(
+            Game.time_class == TimeClass.blitz,
+        ).order_by(Game.end_time).all()
 
     if len(games) < 10:
         return _empty_pattern("losing_streak_behavior")
@@ -601,14 +604,14 @@ def detect_losing_streak_behavior(db: Session) -> dict:
     }
 
 
-def detect_time_trouble(db: Session) -> dict:
+def detect_time_trouble(db: Session, blitz_games: list[Game] | None = None) -> dict:
     """Parse %clk from PGN. Detect games where player had <30s remaining.
     Compare blunder rate in time trouble vs adequate time."""
     # Only query analyzed games that have move analysis
     analyzed_ids = {r[0] for r in db.query(GameSummary.game_id).all()}
 
-    games = db.query(Game).filter(
-        Game.time_class == "blitz",
+    games = blitz_games if blitz_games is not None else db.query(Game).filter(
+        Game.time_class == TimeClass.blitz,
     ).all()
 
     if not games:
@@ -770,23 +773,30 @@ def detect_first_move_syndrome(db: Session) -> dict:
 # ── Aggregator ──
 
 def detect_all_patterns(db: Session) -> list[dict]:
-    """Run all 8 behavioral pattern detectors and return combined results."""
+    """Run all 8 behavioral pattern detectors and return combined results.
+
+    Queries blitz games once and passes the list to detectors that need it,
+    avoiding 6 redundant full-table scans.
+    """
+    # Single query for all blitz games — shared across 5 detectors
+    blitz_games = db.query(Game).filter(Game.time_class == TimeClass.blitz).all()
+
     detectors = [
-        ("early_queen_trades", detect_early_queen_trades),
-        ("piece_retreats", detect_piece_retreats),
-        ("same_piece_twice", detect_same_piece_twice_opening),
-        ("pawn_storms", detect_pawn_storms_castled_king),
-        ("endgame_avoidance", detect_endgame_avoidance),
-        ("losing_streak", detect_losing_streak_behavior),
-        ("time_trouble", detect_time_trouble),
-        ("first_move_syndrome", detect_first_move_syndrome),
+        ("early_queen_trades", lambda: detect_early_queen_trades(db, blitz_games=blitz_games)),
+        ("piece_retreats", lambda: detect_piece_retreats(db)),
+        ("same_piece_twice", lambda: detect_same_piece_twice_opening(db, blitz_games=blitz_games)),
+        ("pawn_storms", lambda: detect_pawn_storms_castled_king(db, blitz_games=blitz_games)),
+        ("endgame_avoidance", lambda: detect_endgame_avoidance(db)),
+        ("losing_streak", lambda: detect_losing_streak_behavior(db, blitz_games=blitz_games)),
+        ("time_trouble", lambda: detect_time_trouble(db, blitz_games=blitz_games)),
+        ("first_move_syndrome", lambda: detect_first_move_syndrome(db)),
     ]
 
     results = []
     for name, detector in detectors:
         try:
             logger.info(f"Running behavioral detector: {name}")
-            result = detector(db)
+            result = detector()
             results.append(result)
         except Exception as e:
             logger.error(f"Detector {name} failed: {e}")

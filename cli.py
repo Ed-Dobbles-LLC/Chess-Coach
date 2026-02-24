@@ -40,7 +40,7 @@ def cmd_sync(args):
 
 def cmd_analyze(args):
     from app.database import SessionLocal
-    from app.models.models import Game, GameSummary
+    from app.models.models import Game, GameSummary, TimeClass
     from app.services.stockfish import analyze_game
 
     db = SessionLocal()
@@ -50,7 +50,7 @@ def cmd_analyze(args):
     analyzed_set = {r[0] for r in analyzed_ids}
 
     games = db.query(Game).filter(
-        Game.time_class == "blitz",
+        Game.time_class == TimeClass.blitz,
     ).order_by(Game.end_time.desc()).all()
 
     unanalyzed = [g for g in games if g.id not in analyzed_set]

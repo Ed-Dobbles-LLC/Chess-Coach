@@ -137,98 +137,112 @@ def analyze_game(db: Session, game: Game, depth: int | None = None) -> dict:
             fen_before = board.fen()
             game_phase = detect_game_phase(board, ply)
 
-            # Get engine evaluation of current position
-            info_before = engine.analyse(board, move_limit)
-            eval_before_white = eval_to_cp(info_before, True)
+            move_pushed = False
+            try:
+                # Get engine evaluation of current position
+                info_before = engine.analyse(board, move_limit)
+                eval_before_white = eval_to_cp(info_before, True)
 
-            # Get the best move
-            best_move_result = engine.play(board, move_limit)
-            best_move = best_move_result.move
+                # Get the best move
+                best_move_result = engine.play(board, move_limit)
+                best_move = best_move_result.move
 
-            best_move_san = board.san(best_move) if best_move else None
-            best_move_uci = best_move.uci() if best_move else None
+                best_move_san = board.san(best_move) if best_move else None
+                best_move_uci = best_move.uci() if best_move else None
 
-            # Get top 3 lines
-            multi_info = engine.analyse(board, move_limit, multipv=3)
-            top_3 = []
-            if isinstance(multi_info, list):
-                for line_info in multi_info:
-                    pv = line_info.get("pv", [])
-                    score = line_info.get("score")
-                    if pv and score:
-                        pv_san = []
-                        temp_board = board.copy()
-                        for m in pv[:5]:
-                            pv_san.append(temp_board.san(m))
-                            temp_board.push(m)
-                        s = score.white()
-                        mate = s.mate()
-                        cp = (10000 if mate > 0 else -10000) if mate is not None else (s.score() or 0)
-                        top_3.append({"moves": pv_san, "eval": cp})
+                # Get top 3 lines
+                multi_info = engine.analyse(board, move_limit, multipv=3)
+                top_3 = []
+                if isinstance(multi_info, list):
+                    for line_info in multi_info:
+                        pv = line_info.get("pv", [])
+                        score = line_info.get("score")
+                        if pv and score:
+                            pv_san = []
+                            temp_board = board.copy()
+                            for m in pv[:5]:
+                                pv_san.append(temp_board.san(m))
+                                temp_board.push(m)
+                            s = score.white()
+                            mate = s.mate()
+                            cp = (10000 if mate > 0 else -10000) if mate is not None else (s.score() or 0)
+                            top_3.append({"moves": pv_san, "eval": cp})
 
-            move_played_san = board.san(move)
-            move_played_uci = move.uci()
+                move_played_san = board.san(move)
+                move_played_uci = move.uci()
 
-            # Make the move and evaluate the resulting position
-            board.push(move)
-            info_after = engine.analyse(board, move_limit)
-            eval_after_white = eval_to_cp(info_after, True)
+                # Make the move and evaluate the resulting position
+                board.push(move)
+                move_pushed = True
+                info_after = engine.analyse(board, move_limit)
+                eval_after_white = eval_to_cp(info_after, True)
 
-            # Calculate eval delta from player's perspective
-            if eval_before_white is not None and eval_after_white is not None:
-                if is_white_move:
-                    # White moved: positive delta = good for white
-                    eval_delta = eval_after_white - eval_before_white
-                    eval_before_player = eval_before_white if player_is_white else -eval_before_white
-                    eval_after_player = eval_after_white if player_is_white else -eval_after_white
+                # Calculate eval delta from player's perspective
+                if eval_before_white is not None and eval_after_white is not None:
+                    if is_white_move:
+                        # White moved: positive delta = good for white
+                        eval_delta = eval_after_white - eval_before_white
+                        eval_before_player = eval_before_white if player_is_white else -eval_before_white
+                        eval_after_player = eval_after_white if player_is_white else -eval_after_white
+                    else:
+                        # Black moved: flip perspective
+                        eval_delta = -(eval_after_white - eval_before_white)
+                        eval_before_player = -eval_before_white if player_is_white else eval_before_white
+                        eval_after_player = -eval_after_white if player_is_white else eval_after_white
+
+                    # cp_loss is how much the move cost (positive = lost advantage)
+                    # For the moving side: compare best eval to actual eval
+                    cp_loss = -eval_delta  # positive means the move was worse than best
+                    classification = classify_move(cp_loss) if is_player_move else classify_move(cp_loss)
                 else:
-                    # Black moved: flip perspective
-                    eval_delta = -(eval_after_white - eval_before_white)
-                    eval_before_player = -eval_before_white if player_is_white else eval_before_white
-                    eval_after_player = -eval_after_white if player_is_white else eval_after_white
+                    eval_delta = None
+                    eval_before_player = None
+                    eval_after_player = None
+                    cp_loss = 0
+                    classification = MoveClassification.good
 
-                # cp_loss is how much the move cost (positive = lost advantage)
-                # For the moving side: compare best eval to actual eval
-                cp_loss = -eval_delta  # positive means the move was worse than best
-                classification = classify_move(cp_loss) if is_player_move else classify_move(cp_loss)
-            else:
-                eval_delta = None
-                eval_before_player = None
-                eval_after_player = None
-                cp_loss = 0
-                classification = MoveClassification.good
+                analysis = MoveAnalysis(
+                    game_id=game.id,
+                    move_number=move_number,
+                    ply=ply,
+                    color=color,
+                    is_player_move=is_player_move,
+                    fen_before=fen_before,
+                    move_played=move_played_uci,
+                    move_played_san=move_played_san,
+                    best_move=best_move_uci,
+                    best_move_san=best_move_san,
+                    eval_before=eval_before_player,
+                    eval_after=eval_after_player,
+                    eval_delta=eval_delta if is_player_move else None,
+                    classification=classification,
+                    depth=depth,
+                    game_phase=game_phase,
+                    top_3_lines=top_3 if top_3 else None,
+                )
+                analyses.append(analysis)
+                db.add(analysis)
 
-            analysis = MoveAnalysis(
-                game_id=game.id,
-                move_number=move_number,
-                ply=ply,
-                color=color,
-                is_player_move=is_player_move,
-                fen_before=fen_before,
-                move_played=move_played_uci,
-                move_played_san=move_played_san,
-                best_move=best_move_uci,
-                best_move_san=best_move_san,
-                eval_before=eval_before_player,
-                eval_after=eval_after_player,
-                eval_delta=eval_delta if is_player_move else None,
-                classification=classification,
-                depth=depth,
-                game_phase=game_phase,
-                top_3_lines=top_3 if top_3 else None,
-            )
-            analyses.append(analysis)
-            db.add(analysis)
+                if is_player_move and eval_delta is not None:
+                    player_cp_losses.append(abs(cp_loss) if cp_loss > 0 else 0)
+                    phase_cp_losses[game_phase.value].append(abs(cp_loss) if cp_loss > 0 else 0)
 
-            if is_player_move and eval_delta is not None:
-                player_cp_losses.append(abs(cp_loss) if cp_loss > 0 else 0)
-                phase_cp_losses[game_phase.value].append(abs(cp_loss) if cp_loss > 0 else 0)
+                    # Detect critical moments (eval swing > 100cp on player's move)
+                    if abs(cp_loss) > 100:
+                        critical_moments.append(ply)
 
-                # Detect critical moments (eval swing > 100cp on player's move)
-                if abs(cp_loss) > 100:
-                    critical_moments.append(ply)
+                prev_eval_white = eval_after_white
 
-            prev_eval_white = eval_after_white
+            except chess.engine.EngineTerminatedError:
+                logger.error(f"Engine terminated at ply {ply} of game {game.id}")
+                if not move_pushed:
+                    board.push(move)
+                break
+            except Exception as e:
+                logger.warning(f"Engine error at ply {ply} of game {game.id}: {e}")
+                if not move_pushed:
+                    board.push(move)
+                continue
 
     finally:
         engine.quit()
