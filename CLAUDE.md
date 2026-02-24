@@ -137,10 +137,21 @@ STOCKFISH_DEEP_DEPTH  — Single-game deep review depth (default: 22)
 - **Railway project:** https://railway.com/project/12a4ab27-3e6d-4da8-b40c-0024e4a27f74
 - **Railway service:** chess-coach (FastAPI + Stockfish in Docker)
 - **Railway Postgres:** auto-injected via `DATABASE_URL`
-- Token in `.env` as `RAILWAY_TOKEN` (never commit)
+- **Railway token:** `c6d707bb-1eb9-436e-a01a-fe58eefecb5b`
+- **Service ID:** `16e51c7a-2b69-475a-99b7-6a7bb02a2202`
+- **Environment ID:** `cb260c13-5606-48ef-87a6-a34d104cf265`
 
 ### Deploy to Railway
 
+**Quick redeploy (via API):**
+```bash
+curl -sk -X POST "https://backboard.railway.com/graphql/v2" \
+  -H "Authorization: Bearer c6d707bb-1eb9-436e-a01a-fe58eefecb5b" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "mutation { serviceInstanceRedeploy(serviceId: \"16e51c7a-2b69-475a-99b7-6a7bb02a2202\", environmentId: \"cb260c13-5606-48ef-87a6-a34d104cf265\") }"}'
+```
+
+**Initial setup:**
 1. In Railway dashboard → New Service → Deploy from GitHub repo
 2. Railway auto-detects `Dockerfile` + `railway.toml`
 3. Set environment variables in Railway dashboard:
