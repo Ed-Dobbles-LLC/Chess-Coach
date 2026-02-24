@@ -784,8 +784,9 @@ function renderBoard(moves, ply, playerColor) {
             const sqClass = isLight ? 'board-square-light' : 'board-square-dark';
             const coordClass = isLight ? 'board-coord-on-light' : 'board-coord-on-dark';
             const piece = board[r][c];
+            const pieceColor = piece ? (piece === piece.toUpperCase() ? 'piece-white' : 'piece-black') : '';
             html += `<div class="board-square ${sqClass}">
-                ${piece ? pieces[piece] : ''}
+                ${piece ? `<span class="${pieceColor}">${pieces[piece]}</span>` : ''}
                 ${r === 7 ? `<span class="board-coord board-coord-file ${coordClass}">${files[c]}</span>` : ''}
                 ${c === 0 ? `<span class="board-coord board-coord-rank ${coordClass}">${ranks[r]}</span>` : ''}
             </div>`;
@@ -1078,8 +1079,9 @@ function renderDrillBoard(fen, playerColor) {
             const sqClass = isLight ? 'board-square-light' : 'board-square-dark';
             const coordClass = isLight ? 'board-coord-on-light' : 'board-coord-on-dark';
             const piece = board[r][c];
+            const pieceColor = piece ? (piece === piece.toUpperCase() ? 'piece-white' : 'piece-black') : '';
             html += `<div class="board-square ${sqClass}">
-                ${piece ? pieces[piece] : ''}
+                ${piece ? `<span class="${pieceColor}">${pieces[piece]}</span>` : ''}
                 ${r === 7 ? `<span class="board-coord board-coord-file ${coordClass}">${files[c]}</span>` : ''}
                 ${c === 0 ? `<span class="board-coord board-coord-rank ${coordClass}">${ranks[r]}</span>` : ''}
             </div>`;
