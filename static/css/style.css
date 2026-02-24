@@ -473,11 +473,21 @@ tbody tr:active td { background: rgba(255, 255, 255, 0.05); }
 
 .piece-white {
     color: #fff;
-    text-shadow: 0 0 2px rgba(0,0,0,0.6);
+    text-shadow:
+        -1px -1px 0 #333,
+         1px -1px 0 #333,
+        -1px  1px 0 #333,
+         1px  1px 0 #333,
+         0    0   3px rgba(0,0,0,0.4);
 }
 .piece-black {
-    color: #1a1a1a;
-    text-shadow: 0 0 2px rgba(255,255,255,0.4);
+    color: #333;
+    text-shadow:
+        -1px -1px 0 rgba(255,255,255,0.7),
+         1px -1px 0 rgba(255,255,255,0.7),
+        -1px  1px 0 rgba(255,255,255,0.7),
+         1px  1px 0 rgba(255,255,255,0.7),
+         0    0   3px rgba(0,0,0,0.3);
 }
 
 /* Board navigation */
