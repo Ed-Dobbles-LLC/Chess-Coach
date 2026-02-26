@@ -25,8 +25,18 @@ SONNET_MODEL = "claude-sonnet-4-20250514"
 OPUS_MODEL = "claude-opus-4-20250514"
 
 
-def _get_client() -> anthropic.Anthropic:
-    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
+def _get_client():
+    """Get Anthropic client with cost tracking if available."""
+    try:
+        from tracker import TrackedAnthropic
+        return TrackedAnthropic(
+            tool="chess-coaching",
+            project="chess-coach",
+            api_key=settings.anthropic_api_key,
+        )
+    except ImportError:
+        logger.warning("ai-cost-tracker not installed – using plain Anthropic (no cost tracking)")
+        return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 
 def explain_move(db: Session, game: Game, ply: int) -> dict:
