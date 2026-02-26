@@ -15,6 +15,45 @@ let wtAutoplayTimer = null;  // Autoplay interval ID
 let wtAutoplayPly = 0;      // Current ply during autoplay
 let wtActive = false;        // Whether walkthrough mode is active
 
+// ── Auth ──
+function getAuthToken() {
+    return localStorage.getItem('sb-access-token');
+}
+
+function logout() {
+    localStorage.removeItem('sb-access-token');
+    localStorage.removeItem('sb-refresh-token');
+    window.location.href = '/login';
+}
+
+function checkAuth() {
+    const token = getAuthToken();
+    if (!token) {
+        window.location.href = '/login';
+        return false;
+    }
+    return true;
+}
+
+// Load user info into header
+async function loadUserInfo() {
+    try {
+        const user = await apiFetch('/api/auth/me');
+        const userMenuEl = document.getElementById('user-menu');
+        if (userMenuEl) {
+            userMenuEl.innerHTML = `
+                <span class="user-email">${user.display_name || user.email}</span>
+                <button class="btn btn-sm btn-secondary" onclick="logout()">Sign Out</button>
+            `;
+        }
+    } catch (e) {
+        // Token might be expired — redirect to login
+        if (e.message && (e.message.includes('401') || e.message.includes('Not authenticated') || e.message.includes('Token expired'))) {
+            logout();
+        }
+    }
+}
+
 // ── Navigation ──
 document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.addEventListener('click', () => navigateTo(btn.dataset.view));
@@ -52,11 +91,24 @@ function showToast(message, type = 'success') {
 
 // ── API Helpers ──
 async function apiFetch(path, options = {}) {
+    const token = getAuthToken();
+    const headers = {
+        'Content-Type': 'application/json',
+        ...options.headers,
+    };
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+
     try {
         const resp = await fetch(`${API}${path}`, {
-            headers: { 'Content-Type': 'application/json', ...options.headers },
             ...options,
+            headers,
         });
+        if (resp.status === 401) {
+            logout();
+            throw new Error('Session expired — please sign in again');
+        }
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({ detail: resp.statusText }));
             throw new Error(err.detail || `HTTP ${resp.status}`);
@@ -1563,4 +1615,7 @@ function formatCoaching(text) {
 }
 
 // ── Init ──
-loadDashboard();
+if (checkAuth()) {
+    loadUserInfo();
+    loadDashboard();
+}

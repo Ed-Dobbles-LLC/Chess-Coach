@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from app.database import engine, Base
-from app.routers import games, analysis, coaching, drills, dashboard
+from app.routers import games, analysis, coaching, drills, dashboard, auth
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -25,16 +25,33 @@ def _safe_add_column(engine, table_name: str, column_name: str, column_type: str
         logger.info(f"Added column {table_name}.{column_name}")
 
 
+def _safe_add_table_column(engine, table_name: str, column_name: str, column_type: str):
+    """Add a column to an existing table if the table exists but column doesn't."""
+    from sqlalchemy import inspect
+    insp = inspect(engine)
+    if table_name in insp.get_table_names():
+        _safe_add_column(engine, table_name, column_name, column_type)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables on startup
+    # Create tables on startup (includes new 'users' table)
     logger.info("Creating database tables...")
     Base.metadata.create_all(bind=engine)
+
     # Migrate new columns onto existing tables
     try:
         _safe_add_column(engine, "move_analysis", "clock_times", "TEXT")
     except Exception as e:
         logger.warning(f"Column migration skipped: {e}")
+
+    # Add user_id columns to existing tables (nullable for backward compat)
+    for table in ["games", "coaching_sessions", "drill_positions", "play_sessions"]:
+        try:
+            _safe_add_table_column(engine, table, "user_id", "INTEGER REFERENCES users(id)")
+        except Exception as e:
+            logger.warning(f"user_id migration skipped for {table}: {e}")
+
     logger.info("Database tables ready.")
     yield
 
@@ -50,6 +67,7 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Include routers
+app.include_router(auth.router)
 app.include_router(games.router)
 app.include_router(analysis.router)
 app.include_router(coaching.router)
@@ -60,6 +78,11 @@ app.include_router(dashboard.router)
 @app.get("/")
 async def root():
     return FileResponse("static/index.html")
+
+
+@app.get("/login")
+async def login_page():
+    return FileResponse("static/login.html")
 
 
 @app.get("/health")

@@ -8,7 +8,8 @@ from sqlalchemy import func, case, extract
 import chess.pgn
 
 from app.database import get_db
-from app.models.models import Game, GameSummary, MoveAnalysis, GameResult, PlayerColor, DrillPosition
+from app.models.models import Game, GameSummary, MoveAnalysis, GameResult, PlayerColor, DrillPosition, User
+from app.services.auth import get_current_user
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -30,7 +31,7 @@ def _set_cache(key, value):
 
 
 @router.get("/summary")
-def dashboard_summary(db: Session = Depends(get_db)):
+def dashboard_summary(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Aggregated stats for dashboard view."""
     hit, cached = _cached("dashboard_summary")
     if hit:
@@ -95,7 +96,7 @@ def dashboard_summary(db: Session = Depends(get_db)):
 
 
 @router.get("/openings")
-def opening_stats(db: Session = Depends(get_db)):
+def opening_stats(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Opening repertoire stats."""
     stats = db.query(
         Game.opening_name,
@@ -136,7 +137,7 @@ def opening_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/patterns")
-def pattern_stats(db: Session = Depends(get_db)):
+def pattern_stats(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Weakness/strength pattern data."""
     # Phase performance
     phase_stats = {}
@@ -181,7 +182,7 @@ def pattern_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/time-analysis")
-def time_analysis(db: Session = Depends(get_db)):
+def time_analysis(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Time-of-day and day-of-week performance breakdown."""
     # Hour of day
     hourly = db.query(
@@ -220,7 +221,7 @@ def time_analysis(db: Session = Depends(get_db)):
 
 
 @router.get("/opening-book/{eco}")
-def opening_book(eco: str, db: Session = Depends(get_db)):
+def opening_book(eco: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Opening book view: theory, your stats, and your deviations for a specific opening."""
     hit, cached = _cached(f"opening_book_{eco}")
     if hit:
@@ -310,7 +311,7 @@ def opening_book(eco: str, db: Session = Depends(get_db)):
 
 
 @router.get("/sessions")
-def sessions_summary(db: Session = Depends(get_db)):
+def sessions_summary(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Playing session analysis with tilt detection."""
     hit, cached = _cached("sessions_summary")
     if hit:
@@ -324,7 +325,7 @@ def sessions_summary(db: Session = Depends(get_db)):
 
 
 @router.get("/sessions/{date}")
-def session_detail(date: str, db: Session = Depends(get_db)):
+def session_detail(date: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Detailed game-by-game data for a session on a specific date."""
     from app.services.sessions import get_session_detail
     return get_session_detail(db, date)

@@ -5,14 +5,16 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.database import get_db
-from app.models.models import Game, GameSummary, TimeClass
+from app.models.models import Game, GameSummary, TimeClass, User
 from app.services.chess_com import sync_games
+from app.services.auth import get_current_user
 
 router = APIRouter(prefix="/api/games", tags=["games"])
 
 
 @router.get("")
 def list_games(
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
@@ -22,7 +24,9 @@ def list_games(
     analyzed: bool | None = None,
 ):
     """List games with pagination and filters."""
-    query = db.query(Game)
+    query = db.query(Game).filter(
+        (Game.user_id == user.id) | (Game.user_id.is_(None))
+    )
 
     if time_class:
         query = query.filter(Game.time_class == time_class)
@@ -71,7 +75,7 @@ def list_games(
 
 
 @router.get("/{game_id}")
-def get_game(game_id: int, db: Session = Depends(get_db)):
+def get_game(game_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Get a single game with full details and analysis."""
     game = db.query(Game).filter(Game.id == game_id).first()
     if not game:
@@ -116,6 +120,7 @@ def get_game(game_id: int, db: Session = Depends(get_db)):
 @router.post("/sync")
 def trigger_sync(
     background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Trigger Chess.com game import (incremental)."""

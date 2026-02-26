@@ -30,6 +30,17 @@ Personalized chess coaching platform for eddobbles2021 on Chess.com. Ingests ful
 - Phase 6 (Drill Trainer): DONE
 - Phase 7 (Backfill & Polish): DONE
 - Phase 8 (Behavioral & Session Analytics): DONE
+- Phase 9 (Auth & Multi-User): DONE
+
+## WHAT WAS ADDED IN PHASE 9
+
+1. **Supabase magic-link authentication** — Shared Supabase project with Dobbles.AI hub (`xwguviuinmafenlqwtka`). Email OTP login, no passwords. Login page at `/login` with Dobbles.AI branding.
+2. **User model** (`app/models/models.py`) — New `users` table: `supabase_id`, `email`, `display_name`, `chess_com_username`. Auto-provisioned on first login from Supabase JWT claims.
+3. **JWT validation** (`app/services/auth.py`) — Validates Supabase HS256 tokens via `SUPABASE_JWT_SECRET`. `get_current_user` FastAPI dependency on all 23 API endpoints. Auto-creates user record on first auth.
+4. **Auth router** (`app/routers/auth.py`) — `GET /api/auth/me`, `PUT /api/auth/me`, `GET /api/auth/config`. Profile read/update + public Supabase config for frontend.
+5. **Multi-user ready** — `user_id` column added to `games`, `coaching_sessions`, `drill_positions`, `play_sessions` tables. Nullable for backward compat with existing data. Auto-migrated on startup.
+6. **Frontend auth gating** — `apiFetch()` injects `Authorization: Bearer` header. Auto-redirect to `/login` on missing token or 401. User menu in header with display name and sign-out.
+7. **Login page** (`static/login.html`) — Standalone magic link form matching Dobbles.AI design. Handles Supabase callback (hash fragment token extraction), stores in localStorage, redirects to app.
 
 ## WHAT WAS ADDED IN PHASE 8
 
@@ -55,8 +66,9 @@ app/
   config.py          — Settings from env vars / .env
   database.py        — SQLAlchemy engine (SQLite or Postgres auto-detect)
   models/
-    models.py        — 6 tables: games, move_analysis, game_summaries, coaching_sessions, drill_positions, play_sessions
+    models.py        — 7 tables: users, games, move_analysis, game_summaries, coaching_sessions, drill_positions, play_sessions
   routers/
+    auth.py          — GET /api/auth/me, PUT /api/auth/me, GET /api/auth/config
     games.py         — GET /api/games, GET /api/games/{id}, POST /api/games/sync
     analysis.py      — POST /api/analysis/batch, GET /api/analysis/status, GET /api/analysis/game/{id}
     coaching.py      — POST /api/coach/game-review/{id}, POST /api/coach/move-explain, POST /api/coach/diagnose,
@@ -65,6 +77,7 @@ app/
     dashboard.py     — GET /api/dashboard/summary, /openings, /patterns, /time-analysis, /opening-book/{eco},
                        /sessions, /sessions/{date}
   services/
+    auth.py          — Supabase JWT validation, user auto-provisioning, get_current_user dependency
     chess_com.py     — Chess.com PubAPI ingestion (single-threaded, 1 req/sec)
     stockfish.py     — Engine analysis pipeline (depth 18 batch, depth 22 deep)
     coaching.py      — Claude prompt templates and API calls (move explain, game review, walkthrough, behavioral)
@@ -74,8 +87,9 @@ app/
     behavior.py      — 8 cross-game behavioral pattern detectors
 static/
   index.html         — SPA shell with 7 views (Dashboard, Games, Review, Patterns, Drills, Sessions, Opening Book)
+  login.html         — Magic link login page (Supabase OTP auth)
   css/style.css      — Dobbles.AI design system
-  js/app.js          — Client-side application (board renderer, charts, navigation)
+  js/app.js          — Client-side application (board renderer, charts, navigation, auth token management)
 main.py              — FastAPI app entry point, mounts routers and static files
 cli.py               — CLI batch operations (sync, analyze, extract-drills, tag-themes, build-sessions, status)
 ```
@@ -130,6 +144,9 @@ CHESS_COM_USERNAME    — Target player (default: eddobbles2021)
 STOCKFISH_PATH        — Binary location (default: /usr/games/stockfish)
 STOCKFISH_DEPTH       — Batch analysis depth (default: 18)
 STOCKFISH_DEEP_DEPTH  — Single-game deep review depth (default: 22)
+SUPABASE_URL          — Supabase project URL (default: Dobbles.AI shared project)
+SUPABASE_ANON_KEY     — Supabase publishable anon key (default: Dobbles.AI shared key)
+SUPABASE_JWT_SECRET   — Supabase JWT signing secret (from Supabase dashboard → Settings → API)
 ```
 
 ## DEPLOYMENT

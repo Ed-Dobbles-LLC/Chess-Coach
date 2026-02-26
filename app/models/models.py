@@ -9,6 +9,23 @@ import enum
 from app.database import Base
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    supabase_id = Column(String, unique=True, nullable=False, index=True)
+    email = Column(String, unique=True, nullable=False, index=True)
+    display_name = Column(String)
+    chess_com_username = Column(String)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    last_login = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    games = relationship("Game", back_populates="user")
+    coaching_sessions_rel = relationship("CoachingSession", back_populates="user")
+    drill_positions_rel = relationship("DrillPosition", back_populates="user")
+    play_sessions_rel = relationship("PlaySession", back_populates="user")
+
+
 class PlayerColor(str, enum.Enum):
     white = "white"
     black = "black"
@@ -53,6 +70,7 @@ class Game(Base):
     __tablename__ = "games"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     chess_com_id = Column(String, unique=True, nullable=False, index=True)
     pgn = Column(Text, nullable=False)
     white_username = Column(String, nullable=False, index=True)
@@ -74,6 +92,7 @@ class Game(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Relationships
+    user = relationship("User", back_populates="games")
     move_analyses = relationship("MoveAnalysis", back_populates="game", cascade="all, delete-orphan")
     summary = relationship("GameSummary", back_populates="game", uselist=False, cascade="all, delete-orphan")
     coaching_sessions = relationship("CoachingSession", back_populates="game", cascade="all, delete-orphan")
@@ -132,6 +151,7 @@ class CoachingSession(Base):
     __tablename__ = "coaching_sessions"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     game_id = Column(Integer, ForeignKey("games.id"), nullable=True)
     session_type = Column(Enum(SessionType), nullable=False)
     prompt_sent = Column(Text, nullable=False)
@@ -139,6 +159,7 @@ class CoachingSession(Base):
     model_used = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
+    user = relationship("User", back_populates="coaching_sessions_rel")
     game = relationship("Game", back_populates="coaching_sessions")
 
 
@@ -146,6 +167,7 @@ class DrillPosition(Base):
     __tablename__ = "drill_positions"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     game_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
     ply = Column(Integer, nullable=False)
     fen = Column(String, nullable=False)
@@ -160,6 +182,7 @@ class DrillPosition(Base):
     next_review_date = Column(Date)
     difficulty_rating = Column(Float)
 
+    user = relationship("User", back_populates="drill_positions_rel")
     game = relationship("Game", back_populates="drill_positions")
 
     __table_args__ = (
@@ -177,6 +200,7 @@ class PlaySession(Base):
     __tablename__ = "play_sessions"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     start_time = Column(DateTime(timezone=True), nullable=False, index=True)
     end_time = Column(DateTime(timezone=True), nullable=False)
     game_count = Column(Integer, nullable=False)
@@ -192,3 +216,5 @@ class PlaySession(Base):
     avg_cpl_second_half = Column(Float) # CPL for second half of session
     longest_loss_streak = Column(Integer, default=0)
     session_result = Column(Enum(SessionResult))
+
+    user = relationship("User", back_populates="play_sessions_rel")

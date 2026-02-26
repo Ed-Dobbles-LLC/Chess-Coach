@@ -5,8 +5,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.models import Game, MoveAnalysis, GameSummary
+from app.models.models import Game, MoveAnalysis, GameSummary, User
 from app.services.stockfish import analyze_game, batch_analyze
+from app.services.auth import get_current_user
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 
@@ -19,7 +20,7 @@ class BatchRequest(BaseModel):
 
 
 @router.post("/batch")
-def trigger_batch_analysis(req: BatchRequest, db: Session = Depends(get_db)):
+def trigger_batch_analysis(req: BatchRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Trigger Stockfish batch analysis on games."""
     result = batch_analyze(
         db,
@@ -32,7 +33,7 @@ def trigger_batch_analysis(req: BatchRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/status")
-def analysis_status(db: Session = Depends(get_db)):
+def analysis_status(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Check how many games have been analyzed vs total."""
     total_games = db.query(Game).count()
     analyzed = db.query(GameSummary).count()
@@ -47,6 +48,7 @@ def analysis_status(db: Session = Depends(get_db)):
 @router.get("/game/{game_id}")
 def get_game_analysis(
     game_id: int,
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     player_only: bool = Query(False, description="Only return player's moves"),
 ):

@@ -9,7 +9,8 @@ from app.services.drills import (
     get_next_drills, submit_drill_attempt, get_drill_stats, extract_drill_positions
 )
 from app.services.coaching import explain_move
-from app.models.models import Game
+from app.models.models import Game, User
+from app.services.auth import get_current_user
 
 router = APIRouter(prefix="/api/drills", tags=["drills"])
 
@@ -20,6 +21,7 @@ class DrillAttemptRequest(BaseModel):
 
 @router.get("")
 def get_drills(
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     count: int = Query(10, ge=1, le=50),
     game_phase: str | None = None,
@@ -31,7 +33,7 @@ def get_drills(
 
 
 @router.post("/{drill_id}/attempt")
-def attempt_drill(drill_id: int, req: DrillAttemptRequest, db: Session = Depends(get_db)):
+def attempt_drill(drill_id: int, req: DrillAttemptRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Submit a drill answer and get feedback."""
     result = submit_drill_attempt(db, drill_id, req.move_san)
     if "error" in result:
@@ -48,13 +50,14 @@ def attempt_drill(drill_id: int, req: DrillAttemptRequest, db: Session = Depends
 
 
 @router.get("/stats")
-def drill_statistics(db: Session = Depends(get_db)):
+def drill_statistics(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Get drill performance statistics."""
     return get_drill_stats(db)
 
 
 @router.post("/extract")
 def extract_drills(
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     game_id: int | None = None,
     min_severity: str = Query("mistake", pattern="^(inaccuracy|mistake|blunder)$"),

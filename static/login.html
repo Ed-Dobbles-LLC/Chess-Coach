@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login — Dobbles.AI Chess Coach</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .login-page {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--color-bg);
+        }
+        .login-card {
+            background: var(--color-bg-raised);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            padding: 48px 40px;
+            width: 100%;
+            max-width: 420px;
+            box-shadow: var(--shadow-lg);
+            text-align: center;
+        }
+        .login-logo {
+            font-size: 24px;
+            font-weight: 800;
+            letter-spacing: -0.01em;
+            color: var(--color-text);
+            margin-bottom: 8px;
+        }
+        .login-logo .ai { color: var(--color-red); }
+        .login-subtitle {
+            font-size: 14px;
+            color: var(--color-text-muted);
+            margin-bottom: 36px;
+        }
+        .login-label {
+            display: block;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--color-text-secondary);
+            margin-bottom: 8px;
+        }
+        .login-input {
+            width: 100%;
+            padding: 14px 16px;
+            background: var(--color-bg);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            color: var(--color-text);
+            font-family: var(--font-main);
+            font-size: 15px;
+            transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+            margin-bottom: 24px;
+        }
+        .login-input:focus {
+            outline: none;
+            border-color: var(--color-blue);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+        .login-btn {
+            width: 100%;
+            padding: 14px 24px;
+            background: var(--color-blue);
+            color: #fff;
+            border: none;
+            border-radius: var(--radius-sm);
+            font-family: var(--font-main);
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
+            letter-spacing: 0.02em;
+        }
+        .login-btn:hover {
+            background: #2563eb;
+            box-shadow: 0 4px 16px rgba(59, 130, 246, 0.35);
+        }
+        .login-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .login-error {
+            color: var(--color-red);
+            font-size: 13px;
+            margin-bottom: 16px;
+            display: none;
+        }
+        .login-success {
+            display: none;
+        }
+        .login-success-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        .login-success-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--color-text);
+            margin-bottom: 8px;
+        }
+        .login-success-text {
+            font-size: 14px;
+            color: var(--color-text-secondary);
+            line-height: 1.6;
+            margin-bottom: 16px;
+        }
+        .login-success-email {
+            font-weight: 700;
+            color: var(--color-sky);
+        }
+        .login-back {
+            display: inline-block;
+            margin-top: 16px;
+            font-size: 13px;
+            color: var(--color-text-muted);
+            cursor: pointer;
+            transition: color var(--transition-fast);
+        }
+        .login-back:hover {
+            color: var(--color-text);
+        }
+        .login-restricted {
+            font-size: 11px;
+            color: var(--color-text-muted);
+            margin-top: 24px;
+            letter-spacing: 0.02em;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-page">
+        <div class="login-card">
+            <!-- Login form -->
+            <div id="login-form">
+                <div class="login-logo">Dobbles<span class="ai">.AI</span> Chess Coach</div>
+                <div class="login-subtitle">Sign in with your email to continue</div>
+
+                <div id="login-error" class="login-error"></div>
+
+                <label class="login-label" for="login-email">Email Address</label>
+                <input
+                    type="email"
+                    id="login-email"
+                    class="login-input"
+                    placeholder="you@example.com"
+                    autocomplete="email"
+                    autofocus
+                >
+
+                <button class="login-btn" id="login-btn" onclick="sendMagicLink()">
+                    Send Magic Link
+                </button>
+
+                <div class="login-restricted">Access is restricted to authorized users</div>
+            </div>
+
+            <!-- Success state -->
+            <div id="login-success" class="login-success">
+                <div class="login-success-icon">&#9993;</div>
+                <div class="login-success-title">Check your email</div>
+                <div class="login-success-text">
+                    We sent a magic link to<br>
+                    <span class="login-success-email" id="sent-email"></span>
+                </div>
+                <div class="login-success-text" style="font-size:13px;">
+                    Click the link in the email to sign in. The link expires in 1 hour.
+                </div>
+                <span class="login-back" onclick="showForm()">Use a different email</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://xwguviuinmafenlqwtka.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh3Z3V2aXVpbm1hZmVubHF3dGthIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4NTU3MDksImV4cCI6MjA4NzQzMTcwOX0.kCJ47zKNbj-jPFVPEV98WRcbyfqMrYRoM01CUPt-fHs';
+
+        // If already logged in, redirect to app
+        (function checkExistingSession() {
+            const token = localStorage.getItem('sb-access-token');
+            if (token) {
+                window.location.href = '/';
+            }
+        })();
+
+        // Handle Supabase auth callback (magic link redirect)
+        (function handleCallback() {
+            const hash = window.location.hash;
+            if (hash && hash.includes('access_token')) {
+                const params = new URLSearchParams(hash.substring(1));
+                const accessToken = params.get('access_token');
+                const refreshToken = params.get('refresh_token');
+                if (accessToken) {
+                    localStorage.setItem('sb-access-token', accessToken);
+                    if (refreshToken) {
+                        localStorage.setItem('sb-refresh-token', refreshToken);
+                    }
+                    window.location.href = '/';
+                    return;
+                }
+            }
+        })();
+
+        async function sendMagicLink() {
+            const email = document.getElementById('login-email').value.trim();
+            const btn = document.getElementById('login-btn');
+            const errorEl = document.getElementById('login-error');
+
+            errorEl.style.display = 'none';
+
+            if (!email) {
+                errorEl.textContent = 'Please enter your email address.';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Sending...';
+
+            try {
+                const resp = await fetch(`${SUPABASE_URL}/auth/v1/otp`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': SUPABASE_ANON_KEY,
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        options: {
+                            emailRedirectTo: `${window.location.origin}/login`,
+                        },
+                    }),
+                });
+
+                if (!resp.ok) {
+                    const data = await resp.json().catch(() => ({}));
+                    throw new Error(data.msg || data.error_description || 'Failed to send magic link');
+                }
+
+                // Show success
+                document.getElementById('sent-email').textContent = email;
+                document.getElementById('login-form').style.display = 'none';
+                document.getElementById('login-success').style.display = 'block';
+            } catch (e) {
+                errorEl.textContent = e.message;
+                errorEl.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Send Magic Link';
+            }
+        }
+
+        function showForm() {
+            document.getElementById('login-form').style.display = 'block';
+            document.getElementById('login-success').style.display = 'none';
+        }
+
+        // Allow Enter key to submit
+        document.getElementById('login-email').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendMagicLink();
+        });
+    </script>
+</body>
+</html>

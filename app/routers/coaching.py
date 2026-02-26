@@ -5,9 +5,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.models import Game, CoachingSession
+from app.models.models import Game, CoachingSession, User
 from app.services.coaching import explain_move, review_game, generate_pattern_diagnosis, generate_walkthrough
 from app.services.behavior import detect_all_patterns
+from app.services.auth import get_current_user
 
 router = APIRouter(prefix="/api/coach", tags=["coaching"])
 
@@ -18,7 +19,7 @@ class MoveExplainRequest(BaseModel):
 
 
 @router.post("/game-review/{game_id}")
-def coach_game_review(game_id: int, db: Session = Depends(get_db)):
+def coach_game_review(game_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Generate Claude coaching review for a game."""
     game = db.query(Game).filter(Game.id == game_id).first()
     if not game:
@@ -32,7 +33,7 @@ def coach_game_review(game_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/move-explain")
-def coach_move_explain(req: MoveExplainRequest, db: Session = Depends(get_db)):
+def coach_move_explain(req: MoveExplainRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Explain a single move with Claude coaching."""
     game = db.query(Game).filter(Game.id == req.game_id).first()
     if not game:
@@ -46,7 +47,7 @@ def coach_move_explain(req: MoveExplainRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/walkthrough/{game_id}")
-def coach_walkthrough(game_id: int, db: Session = Depends(get_db)):
+def coach_walkthrough(game_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Generate an interactive game walkthrough with commentary at inflection points."""
     game = db.query(Game).filter(Game.id == game_id).first()
     if not game:
@@ -60,7 +61,7 @@ def coach_walkthrough(game_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/behavioral-analysis")
-def coach_behavioral_analysis(db: Session = Depends(get_db)):
+def coach_behavioral_analysis(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Run all behavioral pattern detectors and generate Claude narrative."""
     from app.services.coaching import generate_behavioral_narrative
     patterns = detect_all_patterns(db)
@@ -69,7 +70,7 @@ def coach_behavioral_analysis(db: Session = Depends(get_db)):
 
 
 @router.post("/diagnose")
-def coach_diagnose(db: Session = Depends(get_db)):
+def coach_diagnose(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Generate full pattern diagnosis using Claude Opus."""
     result = generate_pattern_diagnosis(db)
     if "error" in result:
@@ -79,6 +80,7 @@ def coach_diagnose(db: Session = Depends(get_db)):
 
 @router.get("/sessions")
 def list_coaching_sessions(
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),

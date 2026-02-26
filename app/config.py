@@ -16,6 +16,16 @@ class Settings(BaseSettings):
     stockfish_threads: int = 2
     stockfish_hash_mb: int = 256
 
+    # Supabase auth (shared Dobbles.AI project)
+    supabase_url: str = os.environ.get(
+        "SUPABASE_URL", "https://xwguviuinmafenlqwtka.supabase.co"
+    )
+    supabase_anon_key: str = os.environ.get(
+        "SUPABASE_ANON_KEY",
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh3Z3V2aXVpbm1hZmVubHF3dGthIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4NTU3MDksImV4cCI6MjA4NzQzMTcwOX0.kCJ47zKNbj-jPFVPEV98WRcbyfqMrYRoM01CUPt-fHs",
+    )
+    supabase_jwt_secret: str = os.environ.get("SUPABASE_JWT_SECRET", "")
+
     # Classification thresholds (centipawn loss)
     threshold_best: int = 10
     threshold_excellent: int = 25
