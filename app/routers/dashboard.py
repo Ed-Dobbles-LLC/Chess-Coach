@@ -309,6 +309,20 @@ def opening_book(eco: str, db: Session = Depends(get_db)):
     return result
 
 
+@router.get("/time-management")
+def time_management(db: Session = Depends(get_db)):
+    """Time management analytics — time-vs-accuracy stats from clock data."""
+    from app.services.time_management import get_time_management_stats
+    return get_time_management_stats(db)
+
+
+@router.get("/progress")
+def progress_report(weeks: int = Query(default=12, ge=1, le=52), db: Session = Depends(get_db)):
+    """Weekly progress snapshots and trend analysis."""
+    from app.services.progress import get_progress
+    return get_progress(db, weeks)
+
+
 @router.get("/sessions")
 def sessions_summary(db: Session = Depends(get_db)):
     """Playing session analysis with tilt detection."""

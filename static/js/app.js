@@ -15,6 +15,12 @@ let wtAutoplayTimer = null;  // Autoplay interval ID
 let wtAutoplayPly = 0;      // Current ply during autoplay
 let wtActive = false;        // Whether walkthrough mode is active
 
+// Replay mode state ("What Would You Play?")
+let replayPositions = [];
+let replayIndex = 0;
+let replayCorrect = 0;
+let replayActive = false;
+
 // ── Navigation ──
 document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.addEventListener('click', () => navigateTo(btn.dataset.view));
@@ -32,6 +38,7 @@ function navigateTo(view) {
     else if (view === 'patterns') loadPatterns();
     else if (view === 'drills') loadDrillView();
     else if (view === 'sessions') loadSessions();
+    else if (view === 'progress') loadProgress();
     else if (view === 'openingbook') loadOpeningBook();
 }
 
@@ -1549,6 +1556,416 @@ async function openOpeningDetail(eco) {
         `;
     } catch (e) {
         showToast('Failed to load opening: ' + e.message, 'error');
+    }
+}
+
+// ── Progress View ──
+async function loadProgress() {
+    try {
+        const [progress, timeMgmt] = await Promise.all([
+            apiFetch('/api/dashboard/progress?weeks=12').catch(() => null),
+            apiFetch('/api/dashboard/time-management').catch(() => null),
+        ]);
+
+        // Progress snapshots
+        if (progress && progress.snapshots && progress.snapshots.length > 0) {
+            renderProgressKPIs(progress);
+            renderProgressCharts(progress.snapshots);
+        } else {
+            document.getElementById('progress-kpis').innerHTML =
+                '<div class="kpi-card"><div class="kpi-value">--</div><div class="kpi-label">No snapshot data. Run: python cli.py backfill-snapshots</div></div>';
+        }
+
+        // Time management
+        if (timeMgmt && !timeMgmt.error) {
+            renderTimeManagement(timeMgmt);
+        } else {
+            document.getElementById('time-mgmt-content').innerHTML =
+                `<p style="color:var(--color-text-muted);padding:16px;">${timeMgmt?.error || 'No clock data available. Run: python cli.py backfill-clocks'}</p>`;
+        }
+    } catch (e) {
+        console.error('Failed to load progress:', e);
+    }
+}
+
+function renderProgressKPIs(progress) {
+    const trends = progress.trends || {};
+    const snaps = progress.snapshots;
+    const latest = snaps[snaps.length - 1];
+
+    document.getElementById('progress-kpis').innerHTML = `
+        <div class="kpi-card">
+            <div class="kpi-value ${trends.rating_trend === 'improving' ? 'positive' : trends.rating_trend === 'declining' ? 'negative' : ''}">${trends.rating_trend || 'stable'}</div>
+            <div class="kpi-label">RATING TREND</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-value">${trends.rating_slope != null ? (trends.rating_slope > 0 ? '+' : '') + trends.rating_slope.toFixed(1) : '--'}</div>
+            <div class="kpi-label">RATING SLOPE / WEEK</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-value ${trends.cpl_trend === 'improving' ? 'positive' : trends.cpl_trend === 'declining' ? 'negative' : ''}">${trends.cpl_trend || 'stable'}</div>
+            <div class="kpi-label">ACCURACY TREND</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-value">${latest?.games_played || 0}</div>
+            <div class="kpi-label">GAMES THIS WEEK</div>
+        </div>
+    `;
+
+    // Show improvement/concern if available
+    if (trends.biggest_improvement || trends.biggest_concern) {
+        const kpi = document.getElementById('progress-kpis');
+        if (trends.biggest_improvement) {
+            kpi.innerHTML += `<div class="kpi-card" style="grid-column: span 2;"><div class="kpi-value positive" style="font-size:14px;">${trends.biggest_improvement}</div><div class="kpi-label">BIGGEST IMPROVEMENT</div></div>`;
+        }
+        if (trends.biggest_concern) {
+            kpi.innerHTML += `<div class="kpi-card" style="grid-column: span 2;"><div class="kpi-value negative" style="font-size:14px;">${trends.biggest_concern}</div><div class="kpi-label">BIGGEST CONCERN</div></div>`;
+        }
+    }
+}
+
+function renderProgressCharts(snapshots) {
+    // Rating trend sparkline
+    const ratings = snapshots.map(s => s.rating_end).filter(r => r != null);
+    if (ratings.length > 1) {
+        drawLineChart('progress-rating-chart', {
+            labels: snapshots.map(s => s.week_start.substring(5)),
+            values: snapshots.map(s => s.rating_end),
+            color: '#38bdf8',
+            label: 'Rating',
+        });
+    }
+
+    // CPL trend
+    const cpls = snapshots.filter(s => s.avg_cpl != null);
+    if (cpls.length > 1) {
+        drawBarChart('progress-cpl-chart', {
+            labels: cpls.map(s => s.week_start.substring(5)),
+            values: cpls.map(s => s.avg_cpl),
+            color: '#38bdf8',
+            label: 'CPL',
+            lowerIsBetter: true,
+        });
+    }
+
+    // Blunder rate
+    const blunders = snapshots.filter(s => s.blunder_rate != null);
+    if (blunders.length > 1) {
+        drawBarChart('progress-blunder-chart', {
+            labels: blunders.map(s => s.week_start.substring(5)),
+            values: blunders.map(s => s.blunder_rate),
+            color: '#ef4444',
+            label: 'Blunders/Game',
+            lowerIsBetter: true,
+        });
+    }
+}
+
+function drawLineChart(canvasId, { labels, values, color, label }) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !values.length) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+    const w = rect.width, h = rect.height;
+    const pad = { top: 20, right: 20, bottom: 30, left: 50 };
+
+    const filtered = values.filter(v => v != null);
+    if (filtered.length < 2) return;
+    const minV = Math.min(...filtered) - 10;
+    const maxV = Math.max(...filtered) + 10;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+        const y = pad.top + (h - pad.top - pad.bottom) * i / 4;
+        ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w - pad.right, y); ctx.stroke();
+        ctx.fillStyle = 'rgba(148,163,184,0.6)';
+        ctx.font = '11px Inter';
+        ctx.textAlign = 'right';
+        ctx.fillText(Math.round(maxV - (maxV - minV) * i / 4).toString(), pad.left - 8, y + 4);
+    }
+
+    // Line
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    let started = false;
+    values.forEach((v, i) => {
+        if (v == null) return;
+        const x = pad.left + (w - pad.left - pad.right) * i / (values.length - 1);
+        const y = pad.top + (h - pad.top - pad.bottom) * (1 - (v - minV) / (maxV - minV));
+        if (!started) { ctx.moveTo(x, y); started = true; }
+        else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // Dots
+    values.forEach((v, i) => {
+        if (v == null) return;
+        const x = pad.left + (w - pad.left - pad.right) * i / (values.length - 1);
+        const y = pad.top + (h - pad.top - pad.bottom) * (1 - (v - minV) / (maxV - minV));
+        ctx.beginPath();
+        ctx.arc(x, y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+    });
+
+    // X labels
+    ctx.fillStyle = 'rgba(148,163,184,0.6)';
+    ctx.font = '10px Inter';
+    ctx.textAlign = 'center';
+    labels.forEach((l, i) => {
+        if (i % Math.ceil(labels.length / 8) !== 0 && i !== labels.length - 1) return;
+        const x = pad.left + (w - pad.left - pad.right) * i / (labels.length - 1);
+        ctx.fillText(l, x, h - pad.bottom + 16);
+    });
+}
+
+function renderTimeManagement(data) {
+    const container = document.getElementById('time-mgmt-content');
+    const tt = data.time_trouble_stats || {};
+    const phases = data.avg_time_per_move_by_phase || {};
+    const tva = data.time_vs_accuracy || [];
+    const ow = data.opening_time_waste || {};
+
+    let html = '<div class="grid-2" style="margin-bottom:16px;">';
+
+    // Time trouble card
+    html += `<div class="card" style="margin-bottom:0;">
+        <div class="card-header" style="color:#DB5461;">TIME TROUBLE</div>
+        <div class="sess-tilt-row">
+            <div class="sess-tilt-label">Games entering time trouble (&lt;30s)</div>
+            <div class="sess-tilt-value negative">${tt.games_with_under_30s || 0} (${tt.pct_of_total || 0}%)</div>
+        </div>
+        <div class="sess-tilt-row">
+            <div class="sess-tilt-label">Blunder rate in time trouble</div>
+            <div class="sess-tilt-value negative">${tt.blunder_rate_in_time_trouble ?? '--'}%</div>
+        </div>
+        <div class="sess-tilt-row">
+            <div class="sess-tilt-label">Blunder rate with adequate time</div>
+            <div class="sess-tilt-value positive">${tt.blunder_rate_with_time ?? '--'}%</div>
+        </div>
+        <div class="sess-tilt-row">
+            <div class="sess-tilt-label">Win rate in time trouble vs with time</div>
+            <div class="sess-tilt-value">${tt.win_rate_in_time_trouble ?? '--'}% vs ${tt.win_rate_with_time ?? '--'}%</div>
+        </div>
+    </div>`;
+
+    // Phase timing card
+    html += `<div class="card" style="margin-bottom:0;">
+        <div class="card-header">AVG TIME PER MOVE</div>
+        <div class="sess-tilt-row">
+            <div class="sess-tilt-label">Opening</div>
+            <div class="sess-tilt-value">${phases.opening ?? '--'}s</div>
+        </div>
+        <div class="sess-tilt-row">
+            <div class="sess-tilt-label">Middlegame</div>
+            <div class="sess-tilt-value">${phases.middlegame ?? '--'}s</div>
+        </div>
+        <div class="sess-tilt-row">
+            <div class="sess-tilt-label">Endgame</div>
+            <div class="sess-tilt-value">${phases.endgame ?? '--'}s</div>
+        </div>
+        ${ow.recommendation ? `<div style="padding:12px 0 0;font-size:12px;color:var(--color-amber);line-height:1.5;">${ow.recommendation}</div>` : ''}
+    </div>`;
+
+    html += '</div>';
+
+    // Time vs accuracy table
+    if (tva.length > 0) {
+        html += `<div style="margin-top:12px;">
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--color-text-muted);margin-bottom:8px;">Time Spent vs Accuracy</div>
+            <div class="table-wrap"><table>
+                <thead><tr><th>Time Bucket</th><th>Avg CPL</th><th>Blunder %</th><th>Moves</th></tr></thead>
+                <tbody>${tva.map(t => `
+                    <tr>
+                        <td><strong>${t.time_bucket}</strong></td>
+                        <td>${t.avg_cpl != null ? t.avg_cpl.toFixed(0) : '--'}</td>
+                        <td>${t.blunder_pct != null ? t.blunder_pct + '%' : '--'}</td>
+                        <td style="color:var(--color-text-muted);">${t.moves.toLocaleString()}</td>
+                    </tr>
+                `).join('')}</tbody>
+            </table></div>
+        </div>`;
+    }
+
+    container.innerHTML = html;
+}
+
+async function generateMonthlyReport() {
+    showToast('Generating monthly progress report with Claude Opus...');
+    try {
+        const result = await apiFetch('/api/coach/monthly-report', { method: 'POST' });
+        document.getElementById('monthly-report-card').style.display = 'block';
+        document.getElementById('monthly-report-text').innerHTML = formatCoaching(result.report);
+        showToast('Monthly report generated.');
+    } catch (e) {
+        showToast('Report failed: ' + e.message, 'error');
+    }
+}
+
+// ── What Would You Play? (Replay Mode) ──
+async function startReplayMode() {
+    showToast('Loading positions from your games...');
+    try {
+        const data = await apiFetch('/api/drills/replay-positions?count=10');
+        if (!data.positions || data.positions.length === 0) {
+            showToast('No positions available. Analyze more games first.', 'error');
+            return;
+        }
+        replayPositions = data.positions;
+        replayIndex = 0;
+        replayCorrect = 0;
+        replayActive = true;
+
+        document.getElementById('replay-container').style.display = 'block';
+        document.getElementById('btn-replay-mode').textContent = 'Playing...';
+        document.getElementById('btn-replay-mode').disabled = true;
+
+        loadReplayPosition(0);
+    } catch (e) {
+        showToast('Failed to load replay positions: ' + e.message, 'error');
+    }
+}
+
+function exitReplayMode() {
+    replayActive = false;
+    document.getElementById('replay-container').style.display = 'none';
+    document.getElementById('btn-replay-mode').textContent = 'What Would You Play?';
+    document.getElementById('btn-replay-mode').disabled = false;
+
+    document.getElementById('drill-prompt').textContent = 'Find the best move!';
+    document.getElementById('drill-feedback').style.display = 'none';
+    document.getElementById('btn-next-drill').style.display = 'none';
+}
+
+function loadReplayPosition(index) {
+    if (index >= replayPositions.length) {
+        // Show final results
+        const pct = replayPositions.length > 0 ? Math.round(replayCorrect / replayPositions.length * 100) : 0;
+        document.getElementById('drill-prompt').innerHTML = `
+            <div>Session Complete! You got <strong style="color:var(--color-teal);">${replayCorrect}/${replayPositions.length}</strong> correct (${pct}%).</div>
+        `;
+        document.getElementById('drill-feedback').style.display = 'none';
+        document.getElementById('btn-next-drill').style.display = 'none';
+        document.getElementById('drill-answer').value = '';
+        return;
+    }
+
+    replayIndex = index;
+    const pos = replayPositions[index];
+
+    // Update progress
+    document.getElementById('replay-progress').textContent =
+        `Position ${index + 1} of ${replayPositions.length}`;
+    document.getElementById('replay-accuracy').textContent =
+        `${replayCorrect}/${index} correct`;
+
+    // Render board
+    renderDrillBoard(pos.fen, pos.player_color);
+
+    // Update prompt
+    document.getElementById('drill-prompt').innerHTML = `
+        What would you play? <span style="font-size:13px;color:var(--color-text-muted);">${pos.context}</span>
+    `;
+    document.getElementById('drill-answer').value = '';
+    document.getElementById('drill-feedback').style.display = 'none';
+    document.getElementById('btn-next-drill').style.display = 'none';
+    document.getElementById('btn-next-drill').onclick = () => loadReplayPosition(index + 1);
+}
+
+async function submitDrillOrReplay() {
+    if (replayActive) {
+        await submitReplay();
+    } else {
+        await submitDrill();
+    }
+}
+
+async function submitReplay() {
+    const answer = document.getElementById('drill-answer').value.trim();
+    if (!answer || replayIndex >= replayPositions.length) return;
+
+    const pos = replayPositions[replayIndex];
+
+    try {
+        const result = await apiFetch(`/api/drills/replay-positions/${pos.position_id}/reveal`, {
+            method: 'POST',
+            body: JSON.stringify({ user_guess: answer }),
+        });
+
+        const fb = document.getElementById('drill-feedback');
+        fb.style.display = 'block';
+
+        if (result.was_correct) {
+            replayCorrect++;
+            fb.className = 'drill-feedback correct';
+            fb.innerHTML = `<strong>Correct!</strong> ${result.correct_move} was the best move.`;
+        } else {
+            fb.className = 'drill-feedback incorrect';
+            fb.innerHTML = `
+                <strong>Not quite.</strong> You guessed <span class="notation">${result.user_guess}</span>.
+                The best move was <span class="notation">${result.correct_move}</span>.
+                <br>In the actual game, you played <span class="notation">${result.what_player_played}</span>
+                (${result.classification || ''}, ${result.eval_delta ? result.eval_delta.toFixed(0) + 'cp' : ''}).
+                ${result.coaching ? `<div class="summary-notes" style="margin-top:12px;">${formatCoaching(result.coaching)}</div>` : ''}
+            `;
+        }
+
+        // Update accuracy display
+        document.getElementById('replay-accuracy').textContent =
+            `${replayCorrect}/${replayIndex + 1} correct`;
+
+        document.getElementById('btn-next-drill').style.display = 'block';
+    } catch (e) {
+        showToast('Failed to reveal: ' + e.message, 'error');
+    }
+}
+
+// ── Warm Up ──
+async function startWarmUp() {
+    showToast('Generating personalized warm-up...');
+    try {
+        const data = await apiFetch('/api/drills/warmup');
+        if (!data.drills || data.drills.length === 0) {
+            showToast('No warm-up drills available. Extract drills first.', 'error');
+            return;
+        }
+
+        // Navigate to drills and load the warm-up positions
+        navigateTo('drills');
+
+        // Set the drill queue to the warm-up drills
+        drillQueue = data.drills.map(d => ({
+            id: d.id,
+            fen: d.fen,
+            tactical_theme: d.theme,
+            game_phase: d.game_phase,
+            difficulty_rating: d.difficulty,
+            accuracy: d.your_accuracy,
+            player_color: 'white', // Default
+            opening_name: d.opening_eco || 'Warm-up',
+        }));
+
+        document.getElementById('drill-prompt').innerHTML = `
+            <div style="margin-bottom:8px;">Warm-Up Session</div>
+            <div style="font-size:13px;color:var(--color-text-secondary);font-weight:400;">${data.warmup_focus}</div>
+        `;
+
+        renderDrillQueue();
+        if (drillQueue.length > 0) loadDrill(0);
+
+        showToast(`Warm-up loaded: ${data.drills.length} positions targeting your weaknesses.`);
+    } catch (e) {
+        showToast('Warm-up failed: ' + e.message, 'error');
     }
 }
 

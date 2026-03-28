@@ -33,6 +33,8 @@ async def lifespan(app: FastAPI):
     # Migrate new columns onto existing tables
     try:
         _safe_add_column(engine, "move_analysis", "clock_times", "TEXT")
+        _safe_add_column(engine, "move_analysis", "clock_seconds", "REAL")
+        _safe_add_column(engine, "move_analysis", "time_spent_seconds", "REAL")
     except Exception as e:
         logger.warning(f"Column migration skipped: {e}")
     logger.info("Database tables ready.")

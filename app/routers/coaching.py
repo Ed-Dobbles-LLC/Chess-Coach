@@ -77,6 +77,19 @@ def coach_diagnose(db: Session = Depends(get_db)):
     return result
 
 
+@router.post("/monthly-report")
+def coach_monthly_report(db: Session = Depends(get_db)):
+    """Generate narrative monthly progress report using Claude Opus."""
+    from app.services.progress import get_progress
+    from app.services.coaching import generate_monthly_report
+    progress = get_progress(db, weeks=8)
+    if "error" in progress:
+        raise HTTPException(status_code=400, detail=progress["error"])
+
+    result = generate_monthly_report(db, progress)
+    return result
+
+
 @router.get("/sessions")
 def list_coaching_sessions(
     db: Session = Depends(get_db),
